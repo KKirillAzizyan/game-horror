@@ -5,136 +5,150 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Survival Island - Don't Starve Like</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Babylon.js -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/gui/babylon.gui.js"></script>
-    <script src="https://cdn.babylonjs.com/materials/babylonjs.materials.js"></script>
 </head>
 <body>
 
     <canvas id="renderCanvas" touch-action="none"></canvas>
 
     <div id="ui">
+        <!-- Статы -->
         <div id="stats-panel">
             <div class="stat">
                 <div class="stat-label">Здоровье</div>
-                <div class="stat-bar-container"><div class="stat-bar stat-bar-health" id="bar-health"></div></div>
+                <div class="stat-bar-container"><div class="stat-bar" id="bar-health"></div></div>
                 <div class="stat-value" id="val-health">100/100</div>
             </div>
             <div class="stat">
                 <div class="stat-label">Голод</div>
-                <div class="stat-bar-container"><div class="stat-bar stat-bar-hunger" id="bar-hunger"></div></div>
+                <div class="stat-bar-container"><div class="stat-bar" id="bar-hunger"></div></div>
                 <div class="stat-value" id="val-hunger">100/100</div>
             </div>
             <div class="stat">
                 <div class="stat-label">Рассудок</div>
-                <div class="stat-bar-container"><div class="stat-bar stat-bar-sanity" id="bar-sanity"></div></div>
+                <div class="stat-bar-container"><div class="stat-bar" id="bar-sanity"></div></div>
                 <div class="stat-value" id="val-sanity">100/100</div>
             </div>
         </div>
 
+        <!-- Время -->
         <div id="clock-panel">
             <div id="clock-icon">☀️</div>
             <div id="clock-text">День 1</div>
         </div>
 
+        <!-- Инвентарь -->
         <div id="inventory-panel" class="panel-base hidden">
-            <div class="panel-title">Инвентарь</div>
+            <div class="panel-title">Инвентарь <span class="title-key">[E]</span></div>
             <div id="inventory-slots" class="slots-grid"></div>
-            <div class="panel-hint">E — закрыть инвентарь</div>
         </div>
 
+        <!-- Крафтинг -->
         <div id="crafting-panel" class="panel-base hidden">
-            <div class="panel-title">Создание предметов</div>
+            <div class="panel-title">Создание <span class="title-key">[C]</span></div>
             <div id="crafting-recipes" class="recipes-grid"></div>
             <div id="crafting-hint"></div>
-            <div class="panel-hint">C — закрыть крафтинг</div>
         </div>
 
-        <div id="crosshair">+</div>
-        <div id="interact-hint" class="hidden">Нажмите ЛКМ — взаимодействие</div>
+        <div id="interact-hint" class="hidden"></div>
 
+        <!-- Игра окончена -->
         <div id="game-over" class="hidden">
-            <div class="go-title">Вы выжили...</div>
+            <div class="go-title">Вы погибли...</div>
             <div class="go-sub" id="go-days">Дней продержалось: 1</div>
             <button id="btn-restart">Начать заново</button>
         </div>
 
+        <!-- Ошибка загрузки движка -->
+        <div id="load-error" class="hidden">
+            <div class="go-title">Ошибка</div>
+            <div class="go-sub">Не удалось загрузить Babylon.js.<br>Проверьте подключение к интернету и обновите страницу.</div>
+        </div>
+
+        <!-- Стартовое меню -->
         <div id="start-screen">
             <h1>SURVIVAL ISLAND</h1>
-            <p>В стиле Don't Starve Together</p>
+            <p>Выживание в стиле Don't Starve Together</p>
             <button id="btn-start">Начать игру</button>
             <div class="controls-hint">
-                <strong>Управление:</strong> WASD — движение, мышь — обзор, ЛКМ — удар/сбор,<br>
-                E — инвентарь, C — краф팅, R — поставить строение (при выборе)
+                <strong>Управление:</strong><br>
+                <b>W A S D</b> — движение &nbsp;|&nbsp; <b>Мышь</b> — наведение цели &nbsp;|&nbsp; <b>ЛКМ</b> — удар / сбор<br>
+                <b>E</b> — инвентарь &nbsp;|&nbsp; <b>C</b> — создание предметов &nbsp;|&nbsp; <b>Колесо</b> — зум &nbsp;|&nbsp; <b>ПКМ</b> — вращение
             </div>
         </div>
     </div>
 
 <script>
-/* ========================================================================
-   CONFIG
-   ======================================================================== */
-const CONFIG = {
-    worldSize: 60,
-    dayLength: 400, // seconds per day
+(function(){
+"use strict";
+
+/* ======================================================================
+   1. КОНФИГ И ДАННЫЕ
+   ====================================================================== */
+var CONFIG = {
+    worldSize: 70,
+    dayLength: 360,
     startHealth: 100,
     startHunger: 100,
     startSanity: 100,
-    hungerDecay: 0.4,
-    healthDecayWhenStarving: 1.5,
-    sanityDecayNight: 1,
-    sanityGainDay: 0.3,
+    hungerDecay: 0.5,
+    healthDecayWhenStarving: 2,
+    sanityDecayNight: 1.2,
+    sanityGainDay: 0.4,
+    playerSpeed: 8
 };
 
-const ITEMS = {
-    twig:   { id: 'twig',   name: 'Ветка',   icon: '🌿', stackable: true,  category: 'resource' },
-    flint:  { id: 'flint',  name: 'Кремень', icon: '🪨', stackable: true,  category: 'resource' },
-    grass:  { id: 'grass',  name: 'Трава',   icon: '🌾', stackable: true,  category: 'resource' },
-    log:    { id: 'log',    name: 'Бревно',  icon: '🪵', stackable: true,  category: 'resource' },
-    rock:   { id: 'rock',   name: 'Камень',  icon: '🗿', stackable: true,  category: 'resource' },
-    berry:  { id: 'berry',  name: 'Ягода',   icon: '🍇', stackable: true,  category: 'food',    hunger: 15 },
-    meat:   { id: 'meat',   name: 'Мясо',    icon: '🍖', stackable: true,  category: 'food',    hunger: 25 },
-    cookedMeat:{id:'cookedMeat',name:'Жареное мясо',icon:'🍗',stackable:true,category:'food',hunger:40},
-    axe:    { id: 'axe',    name: 'Топор',   icon: '🪓', stackable: false, category: 'tool' },
-    pickaxe:{ id: 'pickaxe',name: 'Кирка',   icon: '⛏️', stackable: false, category: 'tool' },
-    campfire:{ id: 'campfire',name: 'Костёр', icon: '🔥', stackable: false, category: 'structure', placeable: true },
-    chest:  { id: 'chest',  name: 'Сундук',  icon: '📦', stackable: false, category: 'structure', placeable: true },
-    torch:  { id: 'torch',  name: 'Факел',   icon: '🕯️', stackable: false, category: 'tool' },
+var ITEMS = {
+    twig:      { name: 'Ветка',         icon: '🌿', stackable: true,  category: 'resource' },
+    flint:     { name: 'Кремень',       icon: '🪨', stackable: true,  category: 'resource' },
+    grass:     { name: 'Трава',         icon: '🌾', stackable: true,  category: 'resource' },
+    log:       { name: 'Бревно',        icon: '🪵', stackable: true,  category: 'resource' },
+    rock:      { name: 'Камень',        icon: '🗿', stackable: true,  category: 'resource' },
+    berry:     { name: 'Ягода',         icon: '🍇', stackable: true,  category: 'food', hunger: 15 },
+    meat:      { name: 'Мясо',          icon: '🍖', stackable: true,  category: 'food', hunger: 25 },
+    cookedMeat:{ name: 'Жареное мясо',  icon: '🍗', stackable: true,  category: 'food', hunger: 40 },
+    axe:       { name: 'Топор',         icon: '🪓', stackable: false, category: 'tool', tool: 'axe' },
+    pickaxe:   { name: 'Кирка',         icon: '⛏️', stackable: false, category: 'tool', tool: 'pickaxe' },
+    campfire:  { name: 'Костёр',        icon: '🔥', stackable: false, category: 'structure', placeable: true },
+    chest:     { name: 'Сундук',        icon: '📦', stackable: false, category: 'structure', placeable: true },
+    torch:     { name: 'Факел',         icon: '🕯️', stackable: false, category: 'tool' }
 };
 
-const RECIPES = [
-    { id: 'axe', output: 'axe', ingredients: { twig: 2, flint: 1 } },
-    { id: 'pickaxe', output: 'pickaxe', ingredients: { twig: 2, rock: 1 } },
-    { id: 'campfire', output: 'campfire', ingredients: { log: 3, rock: 2 } },
-    { id: 'chest', output: 'chest', ingredients: { log: 5, rock: 3 } },
-    { id: 'torch', output: 'torch', ingredients: { twig: 2, flint: 1 } },
+var RECIPES = [
+    { output:'axe',      ingredients:{ twig:2, flint:1 } },
+    { output:'pickaxe',  ingredients:{ twig:2, rock:1 } },
+    { output:'campfire', ingredients:{ log:3, rock:2 } },
+    { output:'chest',    ingredients:{ log:5, rock:3 } },
+    { output:'torch',    ingredients:{ twig:2, flint:1 } }
 ];
 
-const WORLD_OBJECTS = {
-    tree:   { name: 'Дерево',   hp: 3, drop: 'log',   tool: 'axe' },
-    boulder:{ name: 'Камень',   hp: 3, drop: 'rock',  tool: 'pickaxe' },
-    bush:   { name: 'Ягодный куст', hp: 1, drop: 'berry', tool: null },
-    grassTuft:{ name: 'Трава',  hp: 1, drop: 'grass',  tool: null },
+var WORLD_OBJECTS = {
+    tree:     { name: 'Дерево',        hp: 3, drop: 'log',   tool: 'axe' },
+    boulder:  { name: 'Валун',         hp: 3, drop: 'rock',  tool: 'pickaxe' },
+    bush:     { name: 'Ягодный куст',  hp: 1, drop: 'berry', tool: null },
+    grassTuft:{ name: 'Пучок травы',   hp: 1, drop: 'grass', tool: null },
+    flintRock:{ name: 'Кремнёвый камень', hp: 2, drop: 'flint', tool: null },
+    twigBush: { name: 'Ветвистый куст', hp: 1, drop: 'twig',  tool: null }
 };
 
-/* ========================================================================
-   STATE
-   ======================================================================== */
-let engine, scene, camera, canvas, shadowGenerator;
-let sunLight, hemiLight;
+/* ======================================================================
+   2. СОСТОЯНИЕ ИГРЫ
+   ====================================================================== */
+var engine, scene, camera, canvas, shadowGen;
+var sunLight, hemiLight, ground;
 
-let gameActive = false;
-let inventoryOpen = false;
-let craftingOpen = false;
-let placingStructure = null;
-let previewMesh = null;
+var gameActive = false;
+var gameOverFlag = false;
+var inventoryOpen = false;
+var craftingOpen = false;
+var placingStructure = null;
+var previewMesh = null;
 
-let gameTime = 0;
-let day = 1;
-let isDay = true;
+var gameTime = 0;
+var day = 1;
+var isDay = true;
 
-let player = {
+var player = {
     health: CONFIG.startHealth,
     hunger: CONFIG.startHunger,
     sanity: CONFIG.startSanity,
@@ -142,571 +156,710 @@ let player = {
     maxHunger: CONFIG.startHunger,
     maxSanity: CONFIG.startSanity,
     inventory: {},
-    equipped: null,
-    speed: 6,
+    equipped: null
 };
 
-let worldObjects = [];
-let structures = [];
-let enemies = [];
-let input = { forward:false, backward:false, left:false, right:false };
-let lastAttackTime = 0;
-let playerMesh;
+var playerMesh, playerHead;
+var worldObjects = [];
+var structures = [];
+var enemies = [];
+var input = { forward:false, backward:false, left:false, right:false };
+var lastAttackTime = 0;
+var rightDragging = false, rightDragX = 0;
 
 function $id(el){ return document.getElementById(el); }
 
-/* ========================================================================
-   ENGINE
-   ======================================================================== */
-function initEngine() {
+/* ======================================================================
+   3. ДВИЖОК
+   ====================================================================== */
+function initEngine(){
     canvas = $id('renderCanvas');
-    engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+    engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true });
     scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color3(0.5, 0.7, 0.9);
     scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
-    scene.fogDensity = 0.012;
-
-    camera = new BABYLON.FreeCamera('camera', new BABYLON.Vector3(0, 2, 0), scene);
-    camera.setTarget(new BABYLON.Vector3(0, 2, -1));
-    camera.maxZ = 200;
-    camera.minZ = 0.1;
+    scene.fogDensity = 0.010;
+    scene.collisionsEnabled = true;
+    scene.imageProcessingConfiguration.toneMappingEnabled = false;
 
     sunLight = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(0.5, -1, 0.5), scene);
     sunLight.position = new BABYLON.Vector3(30, 50, 30);
     sunLight.intensity = 1;
+    sunLight.shadowMinZ = 10;
+    sunLight.shadowMaxZ = 120;
 
     hemiLight = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-    hemiLight.intensity = 0.7;
+    hemiLight.intensity = 0.75;
 
-    shadowGenerator = new BABYLON.ShadowGenerator(1024, sunLight);
-    shadowGenerator.useBlurExponentialShadowMap = true;
+    shadowGen = new BABYLON.ShadowGenerator(1024, sunLight);
+    shadowGen.useBlurExponentialShadowMap = true;
+    shadowGen.blurKernel = 16;
 
-    // Ground
-    const ground = BABYLON.MeshBuilder.CreateGround('ground', { width: CONFIG.worldSize, height: CONFIG.worldSize }, scene);
+    // Земля
+    ground = BABYLON.MeshBuilder.CreateGround('ground', { width:CONFIG.worldSize, height:CONFIG.worldSize }, scene);
     ground.receiveShadows = true;
-    const gm = new BABYLON.StandardMaterial('groundMat', scene);
-    gm.diffuseColor = new BABYLON.Color3(0.18, 0.55, 0.22);
+    ground.checkCollisions = false;
+    var gm = new BABYLON.StandardMaterial('groundMat', scene);
+    gm.diffuseColor = new BABYLON.Color3(0.20, 0.55, 0.24);
     gm.specularColor = new BABYLON.Color3(0,0,0);
     ground.material = gm;
 
-    // Player mesh
-    playerMesh = BABYLON.MeshBuilder.CreateSphere('player', { diameter: 0.9 }, scene);
-    playerMesh.position = new BABYLON.Vector3(0, 1.3, 0);
-    playerMesh.visibility = 0.0;
+    // Видимый игрок: тело + голова
+    playerMesh = BABYLON.MeshBuilder.CreateCylinder('playerBody', { height:1.4, diameter:0.7, tessellation:12 }, scene);
+    playerMesh.position = new BABYLON.Vector3(0, 0.7, 0);
     playerMesh.checkCollisions = true;
-    playerMesh.ellipsoid = new BABYLON.Vector3(0.4, 0.9, 0.4);
+    playerMesh.ellipsoid = new BABYLON.Vector3(0.4, 0.7, 0.4);
+    var bm = new BABYLON.StandardMaterial('bodyMat', scene);
+    bm.diffuseColor = new BABYLON.Color3(0.85, 0.35, 0.35);
+    bm.specularColor = new BABYLON.Color3(0.1,0.1,0.1);
+    playerMesh.material = bm;
+    shadowGen.addShadowCaster(playerMesh);
 
-    shadowGenerator.addShadowCaster(playerMesh);
-    addShadowCastersRecursive(ground);
+    playerHead = BABYLON.MeshBuilder.CreateSphere('playerHead', { diameter:0.6, segments:10 }, scene);
+    playerHead.parent = playerMesh;
+    playerHead.position.y = 0.95;
+    var hm = new BABYLON.StandardMaterial('headMat', scene);
+    hm.diffuseColor = new BABYLON.Color3(0.95, 0.78, 0.62);
+    playerHead.material = hm;
+    shadowGen.addShadowCaster(playerHead);
+
+    // Камера сверху, следует за игроком (без pointer lock)
+    camera = new BABYLON.ArcRotateCamera('cam', -Math.PI/2, 1.0, 26, new BABYLON.Vector3(0,1,0), scene);
+    camera.lowerRadiusLimit = 12;
+    camera.upperRadiusLimit = 45;
+    camera.panningSensibility = 0;
+    camera.minZ = 0.1;
+    camera.maxZ = 250;
 }
 
-function addShadowCastersRecursive(mesh) {
-    mesh.receiveShadows = true;
-    shadowGenerator.addShadowCaster(mesh);
-}
-
-/* ========================================================================
-   WORLD
-   ======================================================================== */
-function spawnWorldObject(type, x, z) {
-    const def = WORLD_OBJECTS[type];
-    let mesh;
-    if(type === 'tree') {
-        const trunk = BABYLON.MeshBuilder.CreateCylinder('trunk', { diameter:0.55, height:2 }, scene);
+/* ======================================================================
+   4. ГЕНЕРАЦИЯ МИРА
+   ====================================================================== */
+function spawnWorldObject(type, x, z){
+    var def = WORLD_OBJECTS[type];
+    var mesh;
+    if(type === 'tree'){
+        var trunk = BABYLON.MeshBuilder.CreateCylinder('trunk', { diameter:0.5, height:2, tessellation:8 }, scene);
         trunk.position.set(x, 1, z);
         trunk.checkCollisions = true;
-        trunk.ellipsoid = new BABYLON.Vector3(0.4,1,0.4);
-        const tm = new BABYLON.StandardMaterial('trunk', scene);
-        tm.diffuseColor = new BABYLON.Color3(0.45,0.28,0.18);
+        trunk.ellipsoid = new BABYLON.Vector3(0.35, 1, 0.35);
+        var tm = new BABYLON.StandardMaterial('trunk', scene);
+        tm.diffuseColor = new BABYLON.Color3(0.45, 0.28, 0.16);
         trunk.material = tm;
-        shadowGenerator.addShadowCaster(trunk);
-
-        const leaves = BABYLON.MeshBuilder.CreateSphere('leaves', { diameter:2.6 }, scene);
-        leaves.position.set(x, 2.7, z);
-        const lm = new BABYLON.StandardMaterial('leaves', scene);
-        lm.diffuseColor = new BABYLON.Color3(0.25,0.65,0.25);
+        shadowGen.addShadowCaster(trunk);
+        var leaves = BABYLON.MeshBuilder.CreateSphere('leaves', { diameter:2.6, segments:8 }, scene);
+        leaves.position.set(x, 2.8, z);
+        var lm = new BABYLON.StandardMaterial('leaves', scene);
+        lm.diffuseColor = new BABYLON.Color3(0.22, 0.6, 0.25);
         leaves.material = lm;
+        shadowGen.addShadowCaster(leaves);
         mesh = trunk;
         mesh.leavesRef = leaves;
-        shadowGenerator.addShadowCaster(leaves);
-    } else if(type === 'boulder') {
-        mesh = BABYLON.MeshBuilder.CreateSphere('boulder', { diameter:1.4 }, scene);
+    } else if(type === 'boulder'){
+        mesh = BABYLON.MeshBuilder.CreateSphere('boulder', { diameter:1.4, segments:8 }, scene);
         mesh.position.set(x, 0.7, z);
         mesh.checkCollisions = true;
-        mesh.ellipsoid = new BABYLON.Vector3(0.6,0.6,0.6);
-        const m = new BABYLON.StandardMaterial('rock', scene);
-        m.diffuseColor = new BABYLON.Color3(0.55,0.55,0.55);
+        mesh.ellipsoid = new BABYLON.Vector3(0.6, 0.6, 0.6);
+        var m = new BABYLON.StandardMaterial('rock', scene);
+        m.diffuseColor = new BABYLON.Color3(0.55, 0.55, 0.58);
         mesh.material = m;
-        shadowGenerator.addShadowCaster(mesh);
-    } else if(type === 'bush') {
-        mesh = BABYLON.MeshBuilder.CreateSphere('bush', { diameter:1 }, scene);
+        shadowGen.addShadowCaster(mesh);
+    } else if(type === 'bush'){
+        mesh = BABYLON.MeshBuilder.CreateSphere('bush', { diameter:1.1, segments:8 }, scene);
         mesh.position.set(x, 0.5, z);
         mesh.checkCollisions = true;
-        mesh.ellipsoid = new BABYLON.Vector3(0.4,0.4,0.4);
-        const m = new BABYLON.StandardMaterial('bush', scene);
-        m.diffuseColor = new BABYLON.Color3(0.35,0.75,0.35);
-        mesh.material = m;
-        shadowGenerator.addShadowCaster(mesh);
-    } else if(type === 'grassTuft') {
-        mesh = BABYLON.MeshBuilder.CreateCylinder('grass', { diameterTop:0, diameterBottom:0.3, height:0.5 }, scene);
-        mesh.position.set(x, 0.25, z);
-        const m = new BABYLON.StandardMaterial('grassMat', scene);
-        m.diffuseColor = new BABYLON.Color3(0.2,0.6,0.25);
-        mesh.material = m;
-        shadowGenerator.addShadowCaster(mesh);
+        mesh.ellipsoid = new BABYLON.Vector3(0.45, 0.45, 0.45);
+        var m2 = new BABYLON.StandardMaterial('bush', scene);
+        m2.diffuseColor = new BABYLON.Color3(0.32, 0.7, 0.32);
+        mesh.material = m2;
+        shadowGen.addShadowCaster(mesh);
+        // ягодки
+        var berry = BABYLON.MeshBuilder.CreateSphere('berryG', { diameter:0.25, segments:6 }, scene);
+        berry.position.set(x+0.2, 0.7, z);
+        var beryM = new BABYLON.StandardMaterial('berryM', scene);
+        beryM.diffuseColor = new BABYLON.Color3(0.8, 0.1, 0.4);
+        berry.material = beryM;
+        mesh.berryRef = berry;
+    } else if(type === 'grassTuft'){
+        mesh = BABYLON.MeshBuilder.CreateCylinder('grass', { diameterTop:0, diameterBottom:0.35, height:0.6, tessellation:6 }, scene);
+        mesh.position.set(x, 0.3, z);
+        var gM = new BABYLON.StandardMaterial('grassMat', scene);
+        gM.diffuseColor = new BABYLON.Color3(0.22, 0.62, 0.25);
+        mesh.material = gM;
+        shadowGen.addShadowCaster(mesh);
+    } else if(type === 'flintRock'){
+        mesh = BABYLON.MeshBuilder.CreateSphere('flintRock', { diameter:0.7, segments:6 }, scene);
+        mesh.position.set(x, 0.35, z);
+        var fM = new BABYLON.StandardMaterial('flintM', scene);
+        fM.diffuseColor = new BABYLON.Color3(0.4, 0.35, 0.5);
+        mesh.material = fM;
+        shadowGen.addShadowCaster(mesh);
+    } else if(type === 'twigBush'){
+        mesh = BABYLON.MeshBuilder.CreateSphere('twigBush', { diameter:0.9, segments:6 }, scene);
+        mesh.position.set(x, 0.4, z);
+        var tM = new BABYLON.StandardMaterial('twigM', scene);
+        tM.diffuseColor = new BABYLON.Color3(0.55, 0.45, 0.25);
+        mesh.material = tM;
+        shadowGen.addShadowCaster(mesh);
     }
-    const obj = { mesh, type, hp: def.hp, maxHp: def.hp, x, z, drop: def.drop, tool: def.tool };
+    var obj = { mesh:mesh, type:type, hp:def.hp, maxHp:def.hp, x:x, z:z, drop:def.drop, tool:def.tool };
     worldObjects.push(obj);
     return obj;
 }
 
-function generateWorld() {
-    worldObjects.forEach(o => {
+function clearWorldObjects(){
+    for(var i=0;i<worldObjects.length;i++){
+        var o = worldObjects[i];
         if(o.mesh.leavesRef) o.mesh.leavesRef.dispose();
+        if(o.mesh.berryRef) o.mesh.berryRef.dispose();
         o.mesh.dispose();
-    });
+    }
     worldObjects = [];
-    const count = 45;
-    for(let i=0; i<count; i++) {
-        const x = (Math.random()-0.5)*(CONFIG.worldSize-10);
-        const z = (Math.random()-0.5)*(CONFIG.worldSize-10);
-        const r = Math.random();
-        if(r < 0.3) spawnWorldObject('tree', x, z);
-        else if(r < 0.5) spawnWorldObject('boulder', x, z);
-        else if(r < 0.7) spawnWorldObject('bush', x, z);
-        else spawnWorldObject('grassTuft', x, z);
+}
+
+function generateWorld(){
+    clearWorldObjects();
+    var half = (CONFIG.worldSize-8)/2;
+    // объекты по всему миру
+    var weights = ['tree','tree','tree','boulder','boulder','bush','bush','grassTuft','grassTuft','flintRock','twigBush','tree'];
+    for(var i=0;i<60;i++){
+        var x = (Math.random()*2-1)*half;
+        var z = (Math.random()*2-1)*half;
+        if(Math.sqrt(x*x+z*z) < 3.5) continue; // не заспавнивать у самого старта
+        var type = weights[Math.floor(Math.random()*weights.length)];
+        spawnWorldObject(type, x, z);
+    }
+    // гарантируем ресурсы рядом со стартом, чтобы было чем заняться сразу
+    var startResources = ['tree','tree','bush','bush','grassTuft','grassTuft','flintRock','flintRock','twigBush','twigBush','boulder'];
+    for(var j=0;j<startResources.length;j++){
+        var a = (j/startResources.length)*Math.PI*2;
+        var r = 5 + Math.random()*3;
+        spawnWorldObject(startResources[j], Math.cos(a)*r, Math.sin(a)*r);
     }
 }
 
-function spawnEnemy(x, z) {
-    const mesh = BABYLON.MeshBuilder.CreateSphere('enemy', { diameter:1 }, scene);
+function spawnEnemy(x, z){
+    var mesh = BABYLON.MeshBuilder.CreateSphere('enemy', { diameter:1.0, segments:8 }, scene);
     mesh.position.set(x, 0.55, z);
-    mesh.checkCollisions = true;
-    mesh.ellipsoid = new BABYLON.Vector3(0.4,0.5,0.4);
-    const m = new BABYLON.StandardMaterial('enemyMat', scene);
-    m.diffuseColor = new BABYLON.Color3(0.25,0.1,0.25);
-    m.emissiveColor = new BABYLON.Color3(0.1,0,0.1);
+    var m = new BABYLON.StandardMaterial('enemyMat', scene);
+    m.diffuseColor = new BABYLON.Color3(0.3, 0.12, 0.3);
+    m.emissiveColor = new BABYLON.Color3(0.12, 0, 0.12);
     mesh.material = m;
-    shadowGenerator.addShadowCaster(mesh);
-    const enemy = { mesh, x, z, hp: 35, speed: 3.5, attackCooldown: 0 };
-    enemies.push(enemy);
-    return enemy;
+    shadowGen.addShadowCaster(mesh);
+    var e = { mesh:mesh, x:x, z:z, hp:35, speed:3.6, attackCooldown:0 };
+    enemies.push(e);
+    return e;
 }
 
-/* ========================================================================
-   INVENTORY / CRAFTING
-   ======================================================================== */
-function addItem(itemId, amount=1) {
-    if(!ITEMS[itemId]) return;
-    const it = ITEMS[itemId];
-    if(it.stackable) player.inventory[itemId] = (player.inventory[itemId]||0)+amount;
-    else for(let i=0;i<amount;i++) player.inventory[itemId]=(player.inventory[itemId]||0)+1;
+function clearEnemies(){
+    for(var i=0;i<enemies.length;i++) enemies[i].mesh.dispose();
+    enemies = [];
+}
+
+/* ======================================================================
+   5. ИНВЕНТАРЬ / КРАФТИНГ
+   ====================================================================== */
+function addItem(id, amt){
+    amt = amt || 1;
+    if(!ITEMS[id]) return;
+    player.inventory[id] = (player.inventory[id]||0) + amt;
     updateInventoryUI();
 }
-
-function removeItem(itemId, amount=1) {
-    if(!player.inventory[itemId]) return false;
-    player.inventory[itemId]-=amount;
-    if(player.inventory[itemId]<=0) delete player.inventory[itemId];
+function removeItem(id, amt){
+    amt = amt || 1;
+    if(!player.inventory[id]) return false;
+    player.inventory[id] -= amt;
+    if(player.inventory[id] <= 0) delete player.inventory[id];
     updateInventoryUI();
     return true;
 }
-
-function hasItems(ingredients){
-    for(const [id,amt] of Object.entries(ingredients)) if((player.inventory[id]||0)<amt) return false;
+function hasItems(ing){
+    for(var k in ing){ if((player.inventory[k]||0) < ing[k]) return false; }
     return true;
 }
-
 function craft(recipe){
-    if(!hasItems(recipe.ingredients)){ showCraftHint('Недостаточно ресурсов!'); return false; }
-    for(const [id,amt] of Object.entries(recipe.ingredients)) removeItem(id, amt);
+    if(!hasItems(recipe.ingredients)){ showCraftHint('Не хватает ресурсов!'); return; }
+    for(var k in recipe.ingredients) removeItem(k, recipe.ingredients[k]);
     addItem(recipe.output, 1);
     showCraftHint('Создано: ' + ITEMS[recipe.output].name);
-    return true;
 }
-
-function equipItem(itemId){
-    player.equipped = itemId;
+function equipItem(id){
+    player.equipped = (player.equipped === id) ? null : id;
     updateInventoryUI();
 }
-
-function eatItem(itemId){
-    const item = ITEMS[itemId];
-    if(!item || item.category!=='food') return;
-    removeItem(itemId, 1);
-    player.hunger = Math.min(player.maxHunger, player.hunger + (item.hunger||0));
-    player.health = Math.min(player.maxHealth, player.health + (item.health||0));
-    createFloatingText('+' + (item.hunger||0) + ' голод', '#2196f3');
+function eatItem(id){
+    var it = ITEMS[id];
+    if(!it || it.category !== 'food') return;
+    removeItem(id, 1);
+    player.hunger = Math.min(player.maxHunger, player.hunger + (it.hunger||0));
+    createFloatingText('+' + (it.hunger||0) + ' голод', '#2196f3');
     updateStatsUI();
-    updateInventoryUI();
 }
 
-/* ========================================================================
-   UI
-   ======================================================================== */
+/* ======================================================================
+   6. UI
+   ====================================================================== */
 function updateStatsUI(){
-    $id('val-health').textContent = Math.floor(player.health)+'/'+player.maxHealth;
-    $id('val-hunger').textContent = Math.floor(player.hunger)+'/'+player.maxHunger;
-    $id('val-sanity').textContent = Math.floor(player.sanity)+'/'+player.maxSanity;
+    $id('val-health').textContent = Math.floor(player.health) + '/' + player.maxHealth;
+    $id('val-hunger').textContent = Math.floor(player.hunger) + '/' + player.maxHunger;
+    $id('val-sanity').textContent = Math.floor(player.sanity) + '/' + player.maxSanity;
     setBar('bar-health', player.health/player.maxHealth);
     setBar('bar-hunger', player.hunger/player.maxHunger);
     setBar('bar-sanity', player.sanity/player.maxSanity);
 
-    const tod = (gameTime % CONFIG.dayLength)/CONFIG.dayLength;
-    isDay = tod >= 0.3 && tod <= 0.7;
+    var tod = (gameTime % CONFIG.dayLength) / CONFIG.dayLength;
+    isDay = (tod >= 0.3 && tod <= 0.7);
     $id('clock-icon').textContent = isDay ? '☀️' : '🌙';
-    $id('clock-text').textContent = 'День ' + day + ' ' + (isDay?'день':'ночь');
+    $id('clock-text').textContent = 'День ' + day + ' ' + (isDay ? 'день' : 'ночь');
 }
-
 function setBar(id, pct){
-    const el = $id(id);
-    const p = Math.max(0,Math.min(100,pct*100));
-    el.style.width = p+'%';
-    let color = '#4caf50';
-    if(p<25) color='#f44336'; else if(p<50) color='#ff9800';
-    el.style.background = color;
+    var el = $id(id);
+    var p = Math.max(0, Math.min(100, pct*100));
+    el.style.width = p + '%';
+    el.style.background = p < 25 ? '#f44336' : (p < 50 ? '#ff9800' : '#4caf50');
 }
-
 function updateInventoryUI(){
-    const container = $id('inventory-slots');
-    container.innerHTML='';
-    const entries = Object.entries(player.inventory);
+    var cont = $id('inventory-slots');
+    cont.innerHTML = '';
     if(player.equipped){
-        const div = document.createElement('div');
-        div.className='slot equipped';
-        div.innerHTML='<div class="slot-icon">⚡</div><div class="slot-name">'+ITEMS[player.equipped].name+'</div><div class="slot-count">Экипировано</div>';
-        div.onclick=()=>equipItem(null);
-        container.appendChild(div);
+        var d = document.createElement('div');
+        d.className = 'slot equipped';
+        d.innerHTML = '<div class="slot-icon">⚡</div><div class="slot-name">' + ITEMS[player.equipped].name + '</div><div class="slot-count">Экипировано</div>';
+        d.onclick = function(){ equipItem(player.equipped); };
+        cont.appendChild(d);
     }
-    for(const [id,count] of entries){
-        const item=ITEMS[id];
-        const div=document.createElement('div');
-        div.className='slot';
-        div.innerHTML='<div class="slot-icon">'+item.icon+'</div><div class="slot-name">'+item.name+'</div><div class="slot-count">'+count+'</div>';
-        div.onclick=()=>{
-            if(item.category==='food') eatItem(id);
-            else if(item.category==='tool') equipItem(id);
-            else if(item.category==='structure' && item.placeable) startPlacement(id);
-        };
-        container.appendChild(div);
+    var keys = Object.keys(player.inventory);
+    for(var i=0;i<keys.length;i++){
+        (function(id){
+            var it = ITEMS[id];
+            var d = document.createElement('div');
+            d.className = 'slot';
+            d.innerHTML = '<div class="slot-icon">' + it.icon + '</div><div class="slot-name">' + it.name + '</div><div class="slot-count">' + player.inventory[id] + '</div>';
+            d.onclick = function(){
+                if(it.category === 'food') eatItem(id);
+                else if(it.category === 'tool') equipItem(id);
+                else if(it.category === 'structure' && it.placeable) startPlacement(id);
+            };
+            cont.appendChild(d);
+        })(keys[i]);
     }
-    if(entries.length===0 && !player.equipped) container.innerHTML='<div class="empty">Инвентарь пуст</div>';
+    if(keys.length === 0 && !player.equipped){
+        cont.innerHTML = '<div class="empty">Инвентарь пуст.<br>Наведите мышь на объект и нажмите ЛКМ, чтобы собрать.</div>';
+    }
 }
-
 function showCraftHint(msg){
-    const el=$id('crafting-hint');
-    el.textContent=msg; el.style.color='#f44336';
-    setTimeout(()=>el.textContent='', 2000);
+    var el = $id('crafting-hint');
+    el.textContent = msg;
+    setTimeout(function(){ el.textContent = ''; }, 2200);
 }
-
 function openCrafting(){
-    craftingOpen=true;
+    craftingOpen = true;
     $id('crafting-panel').classList.remove('hidden');
-    $id('inventory-panel').classList.add('hidden');
-    inventoryOpen=false;
-    const cont=$id('crafting-recipes'); cont.innerHTML='';
-    RECIPES.forEach((recipe,idx)=>{
-        const div=document.createElement('div'); div.className='recipe';
-        const ing=Object.entries(recipe.ingredients).map(([id,a])=>a+' '+ITEMS[id].name).join(', ');
-        div.innerHTML='<div class="recipe-icon">'+ITEMS[recipe.output].icon+'</div>'+
-            '<div class="recipe-name">'+ITEMS[recipe.output].name+'</div>'+
-            '<div class="recipe-ing">'+ing+'</div>'+
-            '<button class="recipe-btn">Создать</button>';
-        div.querySelector('button').onclick=(e)=>{ e.stopPropagation(); if(craft(recipe)) updateInventoryUI(); };
-        cont.appendChild(div);
+    closeInventory();
+    var cont = $id('crafting-recipes');
+    cont.innerHTML = '';
+    RECIPES.forEach(function(recipe){
+        var d = document.createElement('div');
+        d.className = 'recipe';
+        var parts = [];
+        for(var k in recipe.ingredients) parts.push(recipe.ingredients[k] + ' ' + ITEMS[k].name);
+        d.innerHTML = '<div class="recipe-icon">' + ITEMS[recipe.output].icon + '</div>' +
+                      '<div class="recipe-info"><div class="recipe-name">' + ITEMS[recipe.output].name + '</div>' +
+                      '<div class="recipe-ing">' + parts.join(', ') + '</div></div>' +
+                      '<button class="recipe-btn">Создать</button>';
+        d.querySelector('button').onclick = function(e){ e.stopPropagation(); craft(recipe); updateInventoryUI(); };
+        cont.appendChild(d);
     });
 }
+function closeCrafting(){ craftingOpen = false; $id('crafting-panel').classList.add('hidden'); }
+function openInventory(){ inventoryOpen = true; updateInventoryUI(); $id('inventory-panel').classList.remove('hidden'); closeCrafting(); }
+function closeInventory(){ inventoryOpen = false; $id('inventory-panel').classList.add('hidden'); }
+function uiOpen(){ return inventoryOpen || craftingOpen; }
 
-function closeCrafting(){ craftingOpen=false; $id('crafting-panel').classList.add('hidden'); }
-
-function updateHover(){
-    const hint=$id('interact-hint');
-    // ray from center
-    const pick = scene.pick(canvas.clientWidth/2, canvas.clientHeight/2);
-    if(pick && pick.hit && pick.distance < 10){
-        const wo=worldObjects.find(o=>o.mesh===pick.pickedMesh || o.mesh.leavesRef===pick.pickedMesh);
-        if(wo){
-            hint.textContent='ЛКМ — '+WORLD_OBJECTS[wo.type].name;
-            hint.classList.remove('hidden');
-            return;
-        }
-    }
-    hint.classList.add('hidden');
+/* ======================================================================
+   7. РАЗМЕЩЕНИЕ СТРОЕНИЙ
+   ====================================================================== */
+function startPlacement(id){
+    if(!ITEMS[id] || !ITEMS[id].placeable) return;
+    placingStructure = id;
+    closeInventory();
+    previewMesh = BABYLON.MeshBuilder.CreateBox('preview', { size:1 }, scene);
+    var pm = new BABYLON.StandardMaterial('previewMat', scene);
+    pm.diffuseColor = new BABYLON.Color3(1, 1, 0);
+    pm.alpha = 0.5;
+    previewMesh.material = pm;
+    previewMesh.isPickable = false;
 }
-
-/* ========================================================================
-   STRUCTURE PLACEMENT
-   ======================================================================== */
-function startPlacement(itemId){
-    if(!ITEMS[itemId] || !ITEMS[itemId].placeable) return;
-    placingStructure=itemId;
-    $id('inventory-panel').classList.add('hidden'); inventoryOpen=false;
-    previewMesh = BABYLON.MeshBuilder.CreateBox('preview',{size:1},scene);
-    const pm=new BABYLON.StandardMaterial('previewMat',scene);
-    pm.diffuseColor=new BABYLON.Color3(1,1,0); pm.alpha=0.5;
-    previewMesh.material=pm; previewMesh.isPickable=false;
-}
-
 function cancelPlacement(){
-    placingStructure=null;
-    if(previewMesh){previewMesh.dispose(); previewMesh=null;}
+    placingStructure = null;
+    if(previewMesh){ previewMesh.dispose(); previewMesh = null; }
 }
-
 function placeStructure(){
     if(!placingStructure) return;
-    const pick = scene.pick(canvas.clientWidth/2, canvas.clientHeight/2);
-    let pos;
-    if(pick && pick.hit) pos=pick.pickedPoint.clone();
-    else {
-        const fwd=camera.getForwardDirection(new BABYLON.Vector3(0,0,1));
-        pos=playerMesh.position.add(fwd.scale(3)); pos.y=0.5;
+    var pick = scene.pick(scene.pointerX, scene.pointerY, function(m){ return m === ground; });
+    if(!pick || !pick.hit) return;
+    var pos = pick.pickedPoint;
+    var sx = Math.round(pos.x/2)*2;
+    var sz = Math.round(pos.z/2)*2;
+    var mesh;
+    if(placingStructure === 'campfire'){
+        mesh = BABYLON.MeshBuilder.CreateCylinder('fire', { diameterTop:0.5, diameterBottom:0.8, height:0.4, tessellation:10 }, scene);
+        mesh.position.set(sx, 0.2, sz);
+        var fm = new BABYLON.StandardMaterial('fireMat', scene);
+        fm.diffuseColor = new BABYLON.Color3(1, 0.5, 0);
+        fm.emissiveColor = new BABYLON.Color3(1, 0.5, 0);
+        mesh.material = fm;
+        var fl = new BABYLON.PointLight('fireLight', new BABYLON.Vector3(sx, 1, sz), scene);
+        fl.range = 9; fl.intensity = 1.1;
+        fl.diffuse = new BABYLON.Color3(1, 0.6, 0.2);
+        shadowGen.addShadowCaster(mesh);
+    } else {
+        mesh = BABYLON.MeshBuilder.CreateBox('chest', { size:1 }, scene);
+        mesh.position.set(sx, 0.5, sz);
+        var cm = new BABYLON.StandardMaterial('chestMat', scene);
+        cm.diffuseColor = new BABYLON.Color3(0.55, 0.38, 0.25);
+        mesh.material = cm;
+        shadowGen.addShadowCaster(mesh);
     }
-    pos.x=Math.round(pos.x/2)*2; pos.z=Math.round(pos.z/2)*2; pos.y=0.5;
-    const structure={id:placingStructure, x:pos.x, y:pos.y, z:pos.z};
-    let mesh;
-    if(placingStructure==='campfire'){
-        mesh=BABYLON.MeshBuilder.CreateCylinder('fire',{diameterTop:0.6,diameterBottom:0.6,height:0.4},scene);
-        mesh.position.set(pos.x,0.2,pos.z);
-        const m=new BABYLON.StandardMaterial('fireMat',scene);
-        m.diffuseColor=new BABYLON.Color3(1,0.5,0); m.emissiveColor=new BABYLON.Color3(1,0.5,0);
-        mesh.material=m;
-        const fl=new BABYLON.PointLight('fireLight',mesh.position,scene);
-        fl.range=7; fl.intensity=0.8;
-        structure.light=fl;
-        shadowGenerator.addShadowCaster(mesh);
-    } else if(placingStructure==='chest'){
-        mesh=BABYLON.MeshBuilder.CreateBox('chest',{size:1},scene);
-        mesh.position.set(pos.x,0.5,pos.z);
-        const m=new BABYLON.StandardMaterial('chestMat',scene);
-        m.diffuseColor=new BABYLON.Color3(0.55,0.38,0.25);
-        mesh.material=m;
-        shadowGenerator.addShadowCaster(mesh);
-    }
-    mesh.checkCollisions=true;
-    structure.mesh=mesh;
-    structures.push(structure);
-    removeItem(placingStructure,1);
+    mesh.checkCollisions = true;
+    structures.push({ id:placingStructure, mesh:mesh, light:mesh.light });
+    removeItem(placingStructure, 1);
     cancelPlacement();
     updateInventoryUI();
 }
 
-/* ========================================================================
-   COMBAT / INTERACTION
-   ======================================================================== */
-function createFloatingText(text,color){
-    const el=document.createElement('div');
-    el.className='floating-text'; el.textContent=text; el.style.color=color||'#fff';
-    el.style.left='50%'; el.style.top='40%';
-    document.body.appendChild(el);
-    let t=0;
-    const anim=setInterval(()=>{
-        t+=16;
-        el.style.transform='translate(-50%,-'+t+'px)';
-        el.style.opacity=1-t/1000;
-        if(t>1000){clearInterval(anim); el.remove();}
-    },16);
+/* ======================================================================
+   8. ВЗАИМОДЕЙСТВИЕ / БОЙ
+   ====================================================================== */
+function pickWorldObject(){
+    var info = scene.pick(scene.pointerX, scene.pointerY, function(m){
+        if(m === playerMesh || m === playerHead) return false;
+        for(var i=0;i<worldObjects.length;i++){
+            var o = worldObjects[i];
+            if(m === o.mesh || m === o.mesh.leavesRef || m === o.mesh.berryRef) return true;
+        }
+        return false;
+    });
+    if(info && info.hit){
+        for(var i=0;i<worldObjects.length;i++){
+            var o = worldObjects[i];
+            if(info.pickedMesh === o.mesh || info.pickedMesh === o.mesh.leavesRef || info.pickedMesh === o.mesh.berryRef) return o;
+        }
+    }
+    return null;
+}
+function pickEnemy(){
+    var info = scene.pick(scene.pointerX, scene.pointerY, function(m){
+        for(var i=0;i<enemies.length;i++) if(m === enemies[i].mesh) return true;
+        return false;
+    });
+    if(info && info.hit){
+        for(var i=0;i<enemies.length;i++) if(enemies[i].mesh === info.pickedMesh) return enemies[i];
+    }
+    return null;
 }
 
 function attack(){
-    const now=Date.now();
-    if(now-lastAttackTime<450) return;
-    lastAttackTime=now;
+    var now = Date.now();
+    if(now - lastAttackTime < 400) return;
+    lastAttackTime = now;
 
-    const item = player.equipped ? ITEMS[player.equipped] : null;
-    const reach = item && item.category==='tool' ? 7 : 4;
-
-    const pick = scene.pick(canvas.clientWidth/2, canvas.clientHeight/2);
-    if(pick && pick.hit && pick.distance < reach){
-        const wo=worldObjects.find(o=>o.mesh===pick.pickedMesh || o.mesh.leavesRef===pick.pickedMesh);
-        if(wo){
-            const def=WORLD_OBJECTS[wo.type];
-            const canHarvest = (!wo.tool) || (item && item.category==='tool' && item.id===wo.tool);
-            if(canHarvest){
-                wo.hp-=1;
-                createFloatingText('-'+1,'#fff');
-                if(wo.hp<=0){
-                    if(wo.drop) addItem(wo.drop,1);
-                    if(wo.mesh.leavesRef) wo.mesh.leavesRef.dispose();
-                    wo.mesh.dispose();
-                    worldObjects=worldObjects.filter(o=>o!==wo);
-                    createFloatingText('+ '+ITEMS[wo.drop].name, wo.drop&&ITEMS[wo.drop].category==='food'?'#4caf50':'#fff');
-                    updateInventoryUI();
-                }
-                return;
-            } else {
-                showCraftHint('Нужен инструмент: '+(wo.tool? wo.tool==='axe'?'топор':'кирка':''));
-                return;
-            }
+    var enemy = pickEnemy();
+    if(enemy){
+        var dmg = (player.equipped === 'axe') ? 15 : 8;
+        enemy.hp -= dmg;
+        createFloatingText('-' + dmg, '#f44336');
+        if(enemy.hp <= 0){
+            enemy.mesh.dispose();
+            enemies = enemies.filter(function(e){ return e !== enemy; });
+            addItem('meat', 1);
         }
-        const enemy=enemies.find(e=>e.mesh===pick.pickedMesh);
-        if(enemy){
-            const dmg = (item && item.id==='axe')?15:8;
-            enemy.hp-=dmg;
-            createFloatingText('-'+dmg,'#f44336');
-            if(enemy.hp<=0){ enemy.mesh.dispose(); enemies=enemies.filter(e=>e!==enemy); addItem('meat',1); updateInventoryUI(); }
+        return;
+    }
+
+    var wo = pickWorldObject();
+    if(wo){
+        var def = WORLD_OBJECTS[wo.type];
+        var canHarvest = (!wo.tool) || (player.equipped && ITEMS[player.equipped].tool === wo.tool);
+        if(canHarvest){
+            wo.hp -= 1;
+            createFloatingText('-1', '#fff');
+            if(wo.hp <= 0){
+                addItem(wo.drop, 1);
+                if(wo.mesh.leavesRef) wo.mesh.leavesRef.dispose();
+                if(wo.mesh.berryRef) wo.mesh.berryRef.dispose();
+                wo.mesh.dispose();
+                worldObjects = worldObjects.filter(function(o){ return o !== wo; });
+            }
+            return;
+        } else {
+            var need = wo.tool === 'axe' ? 'топор' : 'кирка';
+            showTopHint('Нужен ' + need);
             return;
         }
     }
-    // swing without hit
-    createFloatingText('', '#fff');
 }
 
-function updateEnemies(dt){
-    if(isNight && Math.random()<0.015*dt && enemies.length<6){
-        const a=Math.random()*Math.PI*2, r=18;
-        spawnEnemy(playerMesh.position.x+Math.cos(a)*r, playerMesh.position.z+Math.sin(a)*r);
+function createFloatingText(text, color){
+    if(!text) return;
+    var el = document.createElement('div');
+    el.className = 'floating-text';
+    el.textContent = text;
+    el.style.color = color || '#fff';
+    el.style.left = '50%';
+    el.style.top = '45%';
+    document.body.appendChild(el);
+    var t = 0;
+    var anim = setInterval(function(){
+        t += 16;
+        el.style.transform = 'translate(-50%,-' + t + 'px)';
+        el.style.opacity = String(Math.max(0, 1 - t/900));
+        if(t > 900){ clearInterval(anim); el.remove(); }
+    }, 16);
+}
+var topHintTimer = null;
+function showTopHint(text){
+    var el = $id('interact-hint');
+    el.textContent = text;
+    el.classList.remove('hidden');
+    if(topHintTimer) clearTimeout(topHintTimer);
+    topHintTimer = setTimeout(function(){ el.classList.add('hidden'); }, 1500);
+}
+function updateHoverHint(){
+    if(uiOpen()) return;
+    var wo = pickWorldObject();
+    if(wo){
+        var def = WORLD_OBJECTS[wo.type];
+        showTopHint(def.name);
+        return;
     }
-    enemies.forEach(enemy=>{
-        const dx=playerMesh.position.x-enemy.x, dz=playerMesh.position.z-enemy.z;
-        const dist=Math.sqrt(dx*dx+dz*dz);
-        if(dist>1.8){
-            enemy.x+=(dx/dist)*enemy.speed*dt;
-            enemy.z+=(dz/dist)*enemy.speed*dt;
-            enemy.mesh.position.set(enemy.x,0.55,enemy.z);
-            enemy.mesh.lookAt(playerMesh.position);
-        }
-        if(dist<1.6){
-            enemy.attackCooldown-=dt;
-            if(enemy.attackCooldown<=0){
-                player.health-=12; enemy.attackCooldown=1.6;
-                createFloatingText('-12 здоровье','#f44336');
-                updateStatsUI();
-            }
-        }
-    });
 }
 
-/* ========================================================================
-   INPUT
-   ======================================================================== */
+/* ======================================================================
+   9. ВВОД
+   ====================================================================== */
 function initInput(){
-    window.addEventListener('keydown',(e)=>{
-        if(e.code==='KeyW') input.forward=true;
-        if(e.code==='KeyS') input.backward=true;
-        if(e.code==='KeyA') input.left=true;
-        if(e.code==='KeyD') input.right=true;
-        if(e.code==='KeyE'){
-            if(inventoryOpen){inventoryOpen=false;$id('inventory-panel').classList.add('hidden');}
-            else {inventoryOpen=true;updateInventoryUI();$id('inventory-panel').classList.remove('hidden');}
-            if(craftingOpen) closeCrafting();
-            cancelPlacement();
-            togglePointerLock(!inventoryOpen && !craftingOpen);
-        }
-        if(e.code==='KeyC'){
-            if(craftingOpen) closeCrafting();
-            else { openCrafting(); togglePointerLock(false); }
-        }
-        if(e.code==='KeyR'){ if(placingStructure) placeStructure(); }
-        if(e.code==='Escape'){ cancelPlacement(); if(inventoryOpen){inventoryOpen=false;$id('inventory-panel').classList.add('hidden');} if(craftingOpen) closeCrafting(); togglePointerLock(false); }
-    });
-    window.addEventListener('keyup',(e)=>{
-        if(e.code==='KeyW') input.forward=false;
-        if(e.code==='KeyS') input.backward=false;
-        if(e.code==='KeyA') input.left=false;
-        if(e.code==='KeyD') input.right=false;
-    });
-    window.addEventListener('mousedown',(e)=>{
+    window.addEventListener('keydown', function(e){
         if(!gameActive) return;
-        if(e.button===0 && !inventoryOpen && !craftingOpen) attack();
-        if(e.button===2 && placingStructure) placeStructure();
+        if(e.code === 'KeyW') input.forward = true;
+        if(e.code === 'KeyS') input.backward = true;
+        if(e.code === 'KeyA') input.left = true;
+        if(e.code === 'KeyD') input.right = true;
+        if(e.code === 'KeyE'){ inventoryOpen ? closeInventory() : openInventory(); }
+        if(e.code === 'KeyC'){ craftingOpen ? closeCrafting() : openCrafting(); }
+        if(e.code === 'KeyR' && placingStructure) placeStructure();
+        if(e.code === 'Escape'){ cancelPlacement(); closeInventory(); closeCrafting(); }
+        if(e.code === 'Space'){ attack(); e.preventDefault(); }
     });
-    document.addEventListener('pointerlockchange',()=>{
-        const locked = document.pointerLockElement===canvas;
-        if(locked && gameActive && !inventoryOpen && !craftingOpen){
-            camera.attachControl(canvas, true);
-        } else if(!locked){
-            camera.detachControl(canvas);
+    window.addEventListener('keyup', function(e){
+        if(e.code === 'KeyW') input.forward = false;
+        if(e.code === 'KeyS') input.backward = false;
+        if(e.code === 'KeyA') input.left = false;
+        if(e.code === 'KeyD') input.right = false;
+    });
+
+    // ЛКМ: атака или размещение
+    canvas.addEventListener('mousedown', function(e){
+        if(!gameActive || uiOpen()) return;
+        if(e.button === 0){
+            if(placingStructure) placeStructure();
+            else attack();
         }
+        if(e.button === 2){ rightDragging = true; rightDragX = e.clientX; }
+    });
+    window.addEventListener('mouseup', function(e){
+        if(e.button === 2) rightDragging = false;
+    });
+    window.addEventListener('mousemove', function(e){
+        if(rightDragging && gameActive){
+            camera.alpha -= (e.clientX - rightDragX) * 0.008;
+            rightDragX = e.clientX;
+        }
+    });
+    canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+    // Зум колесом
+    canvas.addEventListener('wheel', function(e){
+        if(!gameActive) return;
+        camera.radius += (e.deltaY > 0 ? 1 : -1) * 2;
+        camera.radius = Math.max(12, Math.min(45, camera.radius));
+        e.preventDefault();
+    }, { passive:false });
+
+    // Закрытие инвентаря кликом по фону
+    $id('inventory-panel').addEventListener('click', function(e){
+        if(e.target === this) closeInventory();
     });
 }
 
-function togglePointerLock(lock){
-    if(lock) canvas.requestPointerLock();
-    else document.exitPointerLock();
-}
+/* ======================================================================
+   10. ЛОГИКА
+   ====================================================================== */
+function isPaused(){ return uiOpen(); }
 
 function updateMovement(dt){
     if(!gameActive || isPaused()) return;
-    const move=new BABYLON.Vector3(0,0,0);
-    if(input.forward) move.z+=1;
-    if(input.backward) move.z-=1;
-    if(input.left) move.x+=1;
-    if(input.right) move.x-=1;
-    if(move.length()>0){
+    var fwd = camera.getDirection(BABYLON.Axis.Z);
+    var right = camera.getDirection(BABYLON.Axis.X);
+    fwd.y = 0; right.y = 0;
+    if(fwd.lengthSquared() < 0.001) fwd.set(0,0,1); else fwd.normalize();
+    if(right.lengthSquared() < 0.001) right.set(1,0,0); else right.normalize();
+    var move = new BABYLON.Vector3(0,0,0);
+    if(input.forward) move.addInPlace(fwd);
+    if(input.backward) move.subtractInPlace(fwd);
+    if(input.right) move.addInPlace(right);
+    if(input.left) move.subtractInPlace(right);
+    if(move.lengthSquared() > 0.0001){
         move.normalize();
-        const yaw=camera.rotation.y;
-        const dx=move.x*Math.cos(yaw)-move.z*Math.sin(yaw);
-        const dz=move.x*Math.sin(yaw)+move.z*Math.cos(yaw);
-        playerMesh.moveWithCollisions(new BABYLON.Vector3(dx,0,dz).scale(player.speed*dt));
+        var nx = playerMesh.position.x + move.x * CONFIG.playerSpeed * dt;
+        var nz = playerMesh.position.z + move.z * CONFIG.playerSpeed * dt;
+        // границы мира
+        var half = CONFIG.worldSize/2 - 2;
+        nx = Math.max(-half, Math.min(half, nx));
+        nz = Math.max(-half, Math.min(half, nz));
+        // выталкивание из объектов (круг-круг) — не залипает
+        for(var i=0;i<worldObjects.length;i++){
+            var o = worldObjects[i];
+            var objR = (o.type === 'tree' || o.type === 'boulder') ? 0.6 : 0.4;
+            var dx = nx - o.x, dz = nz - o.z;
+            var dist = Math.sqrt(dx*dx + dz*dz);
+            var minD = objR + 0.45;
+            if(dist < minD && dist > 0.0001){
+                nx = o.x + (dx/dist)*minD;
+                nz = o.z + (dz/dist)*minD;
+            }
+        }
+        playerMesh.position.x = nx;
+        playerMesh.position.z = nz;
+    }
+    playerMesh.position.y = 0.7;
+    camera.target.x = playerMesh.position.x;
+    camera.target.y = playerMesh.position.y + 0.5;
+    camera.target.z = playerMesh.position.z;
+}
+
+function updateDayNight(dt){
+    gameTime += dt;
+    if(gameTime >= CONFIG.dayLength){ gameTime = 0; day++; }
+    var tod = gameTime / CONFIG.dayLength;
+    var angle = tod * Math.PI * 2;
+    sunLight.position.set(Math.sin(angle)*50, Math.max(0.2, Math.cos(angle))*40 + 10, Math.cos(angle)*30);
+    var night = (tod > 0.7 || tod < 0.3);
+    sunLight.intensity = night ? 0.25 : 1;
+    hemiLight.intensity = night ? 0.28 : 0.75;
+    scene.clearColor = night ? new BABYLON.Color3(0.03,0.03,0.12) : new BABYLON.Color3(0.5,0.7,0.9);
+    scene.fogColor = night ? new BABYLON.Color3(0.03,0.03,0.12) : new BABYLON.Color3(0.6,0.75,0.9);
+
+    player.hunger = Math.max(0, Math.min(player.maxHunger, player.hunger - CONFIG.hungerDecay*dt));
+    if(night) player.sanity = Math.max(0, Math.min(player.maxSanity, player.sanity - CONFIG.sanityDecayNight*dt));
+    else player.sanity = Math.max(0, Math.min(player.maxSanity, player.sanity + CONFIG.sanityGainDay*dt));
+    if(player.hunger <= 0) player.health = Math.max(0, Math.min(player.maxHealth, player.health - CONFIG.healthDecayWhenStarving*dt));
+    player.health = Math.max(0, Math.min(player.maxHealth, player.health));
+
+    updateStatsUI();
+    if(player.health <= 0 && !gameOverFlag) doGameOver();
+}
+
+function updateEnemies(dt){
+    if(isDay){ return; }
+    if(Math.random() < 0.02*dt*60/1000 && enemies.length < 7){
+        var a = Math.random()*Math.PI*2;
+        var r = 16;
+        spawnEnemy(playerMesh.position.x + Math.cos(a)*r, playerMesh.position.z + Math.sin(a)*r);
+    }
+    for(var i=0;i<enemies.length;i++){
+        var e = enemies[i];
+        var dx = playerMesh.position.x - e.x;
+        var dz = playerMesh.position.z - e.z;
+        var dist = Math.sqrt(dx*dx + dz*dz);
+        if(dist > 1.6){
+            e.x += (dx/dist)*e.speed*dt;
+            e.z += (dz/dist)*e.speed*dt;
+            e.mesh.position.x = e.x;
+            e.mesh.position.z = e.z;
+            e.mesh.rotation.y = Math.atan2(dx, dz);
+        }
+        if(dist < 1.7){
+            e.attackCooldown -= dt;
+            if(e.attackCooldown <= 0){
+                player.health = Math.max(0, player.health - 12);
+                e.attackCooldown = 1.5;
+                createFloatingText('-12 ❤️', '#f44336');
+                updateStatsUI();
+            }
+        }
     }
 }
 
-function isPaused(){ return inventoryOpen || craftingOpen; }
-
-/* ========================================================================
-   DAY/NIGHT & GAME LOOP
-   ======================================================================== */
-function updateDayNight(dt){
-    gameTime+=dt;
-    if(gameTime>=CONFIG.dayLength){gameTime=0; day++;}
-    const tod=(gameTime/CONFIG.dayLength);
-    const angle=tod*Math.PI*2;
-    sunLight.position.set(Math.sin(angle)*50, Math.max(0,Math.cos(angle))*40+10, Math.cos(angle)*30);
-    const isNight = tod>0.7 || tod<0.3;
-    sunLight.intensity = isNight?0.25:1;
-    hemiLight.intensity = isNight?0.3:0.7;
-    scene.clearColor = isNight? new BABYLON.Color3(0.04,0.04,0.14): new BABYLON.Color3(0.5,0.7,0.9);
-
-    player.hunger=Math.max(0,Math.min(100, player.hunger - CONFIG.hungerDecay*dt));
-    if(isNight) player.sanity=Math.max(0,Math.min(100, player.sanity - CONFIG.sanityDecayNight*dt));
-    else player.sanity=Math.max(0,Math.min(100, player.sanity + CONFIG.sanityGainDay*dt));
-    if(player.hunger<=0) player.health=Math.max(0,Math.min(100, player.health - CONFIG.healthDecayWhenStarving*dt));
-    player.health=Math.max(0,Math.min(100, player.health));
-    updateStatsUI();
-    if(player.health<=0) gameOver();
+function updatePreview(){
+    if(!placingStructure || !previewMesh) return;
+    var pick = scene.pick(scene.pointerX, scene.pointerY, function(m){ return m === ground; });
+    if(pick && pick.hit){
+        previewMesh.position.set(Math.round(pick.pickedPoint.x/2)*2, 0.5, Math.round(pick.pickedPoint.z/2)*2);
+    }
 }
 
-function gameOver(){
-    gameActive=false;
-    document.exitPointerLock();
+function doGameOver(){
+    gameOverFlag = true;
+    gameActive = false;
     $id('game-over').classList.remove('hidden');
-    $id('go-days').textContent='Дней продержалось: '+day;
+    $id('go-days').textContent = 'Дней продержалось: ' + day;
 }
 
+/* ======================================================================
+   11. ЦИКЛ ИГРЫ
+   ====================================================================== */
+var lastTime = performance.now();
 function gameLoop(){
-    if(!gameActive){ scene.render(); requestAnimationFrame(gameLoop); return; }
-    const dt=engine.getDeltaTime()/1000;
-    updateMovement(dt);
-    updateDayNight(dt);
-    updateEnemies(dt);
-    updateHover();
-    if(placingStructure && previewMesh){
-        const pick=scene.pick(canvas.clientWidth/2, canvas.clientHeight/2);
-        if(pick && pick.hit) previewMesh.position.set(pick.pickedPoint.x,0.5,pick.pickedPoint.z);
+    var now = performance.now();
+    var dt = Math.min(0.05, (now - lastTime)/1000);
+    lastTime = now;
+    if(gameActive && !gameOverFlag){
+        updateMovement(dt);
+        updateDayNight(dt);
+        updateEnemies(dt);
+        updatePreview();
+        if(!uiOpen()) updateHoverHint();
     }
     scene.render();
     requestAnimationFrame(gameLoop);
 }
 
+/* ======================================================================
+   12. ЗАПУСК
+   ====================================================================== */
 function startGame(){
     $id('start-screen').classList.add('hidden');
-    gameActive=true;
-    canvas.requestPointerLock();
+    gameActive = true;
+    lastTime = performance.now();
+    showTopHint('Наведите мышь на объект и нажмите ЛКМ, чтобы собрать');
+}
+
+function boot(){
+    initEngine();
+    generateWorld();
+    updateStatsUI();
+    updateInventoryUI();
+    initInput();
+    $id('btn-start').addEventListener('click', startGame);
+    $id('btn-restart').addEventListener('click', function(){ location.reload(); });
+    window.addEventListener('resize', function(){ engine.resize(); });
+    // Отладочный хук (полезен для тестирования)
+    window.GameDebug = { player: player, playerMesh: playerMesh, camera: camera, scene: scene, input: input,
+        getState: function(){ return { gameActive: gameActive, invOpen: inventoryOpen, craftOpen: craftingOpen }; },
+        moveOnce: function(dt){ updateMovement(dt || 0.05); return playerMesh.position.asArray(); },
+        camDir: function(){ return camera.getDirection(BABYLON.Axis.Z).asArray(); } };
     requestAnimationFrame(gameLoop);
 }
 
-/* ========================================================================
-   BOOT
-   ======================================================================== */
-window.addEventListener('DOMContentLoaded',()=>{
-    initEngine();
-    generateWorld();
-    engine.runRenderLoop(()=>{ if(!gameActive) scene.render(); });
-    window.addEventListener('resize',()=>engine.resize());
-    $id('btn-start').addEventListener('click', startGame);
-    $id('btn-restart').addEventListener('click',()=>location.reload());
-    initInput();
+window.addEventListener('DOMContentLoaded', function(){
+    if(typeof BABYLON === 'undefined'){
+        $id('load-error').classList.remove('hidden');
+        return;
+    }
+    boot();
 });
+})();
 </script>
 </body>
 </html>
