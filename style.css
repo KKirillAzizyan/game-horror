@@ -1,170 +1,242 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    background: #000;
-    color: #fff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+html, body {
+    width: 100%; height: 100%;
     overflow: hidden;
+    background: #0a0a0f;
+    font-family: "Segoe UI", Tahoma, sans-serif;
     user-select: none;
+    color: #eee;
 }
-#renderCanvas {
+
+#game {
     display: block;
-    width: 100vw;
-    height: 100vh;
-    outline: none;
-    touch-action: none;
+    width: 100vw; height: 100vh;
+    cursor: crosshair;
 }
-
-/* Подсказка сверху */
-#interact-hint {
-    position: fixed; top: 90px; left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.7);
-    padding: 8px 16px; border-radius: 6px;
-    font-size: 15px; color: #fff;
-    border: 1px solid #555;
-    pointer-events: none; z-index: 20;
-    transition: opacity 0.2s;
-}
-.floating-text {
-    position: fixed; pointer-events: none; z-index: 50;
-    font-weight: bold; font-size: 18px;
-    text-shadow: 1px 1px 3px #000;
-}
-
-/* Статы */
-#stats-panel {
-    position: fixed; top: 20px; left: 20px;
-    z-index: 30; width: 240px;
-}
-.stat { margin-bottom: 14px; }
-.stat-label {
-    font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
-    color: #ccc; margin-bottom: 4px;
-    text-shadow: 1px 1px 2px #000;
-}
-.stat-bar-container {
-    width: 100%; height: 12px; background: #222; border-radius: 6px;
-    overflow: hidden; border: 1px solid #444;
-}
-.stat-bar {
-    height: 100%; width: 100%; background: #4caf50; transition: width 0.25s;
-}
-.stat-value {
-    font-size: 13px; margin-top: 3px; color: #eee;
-    text-shadow: 1px 1px 2px #000;
-}
-
-/* Часы */
-#clock-panel {
-    position: fixed; top: 16px; left: 50%;
-    transform: translateX(-50%);
-    z-index: 30; text-align: center;
-}
-#clock-icon { font-size: 34px; margin-bottom: 4px;
-    filter: drop-shadow(0 0 6px rgba(0,0,0,0.8)); }
-#clock-text { font-size: 18px; font-weight: bold; letter-spacing: 2px;
-    text-shadow: 0 0 8px rgba(0,0,0,0.9); }
-
-/* Панели (общие) */
-.panel-base {
-    position: fixed; z-index: 40;
-    background: rgba(18,18,18,0.92);
-    border: 1px solid #444; border-radius: 12px;
-    padding: 16px; color: #eee; min-width: 280px;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
-}
-.panel-title {
-    font-size: 17px; font-weight: bold; margin-bottom: 12px;
-    color: #ffd54f; letter-spacing: 1px;
-    display: flex; align-items: center; gap: 8px;
-}
-.title-key {
-    font-size: 11px; background: #333; border: 1px solid #555;
-    border-radius: 4px; padding: 2px 6px; color: #aaa; font-weight: normal;
-}
-
-/* Инвентарь */
-#inventory-panel { bottom: 20px; left: 20px; width: 320px; }
-.slots-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.slot {
-    background: rgba(60,60,60,0.9); border: 1px solid #555;
-    border-radius: 8px; padding: 8px; text-align: center;
-    cursor: pointer; transition: all 0.15s;
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    min-height: 72px;
-}
-.slot:hover { border-color: #ffd54f; background: rgba(80,80,80,0.95); transform: translateY(-2px); }
-.slot.equipped { border-color: #2196f3; background: rgba(30,100,160,0.3); }
-.slot-icon { font-size: 26px; }
-.slot-name { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.slot-count { font-size: 11px; color: #aaa; }
-.empty { grid-column: 1 / -1; font-size: 13px; color: #777; text-align: center; padding: 20px; line-height: 1.5; }
-
-/* Крафтинг */
-#crafting-panel { bottom: 20px; right: 20px; width: 360px; max-height: 80vh; overflow-y: auto; }
-.recipes-grid { display: grid; gap: 8px; }
-.recipe {
-    background: rgba(40,40,40,0.9); border: 1px solid #555;
-    border-radius: 8px; padding: 10px; display: flex;
-    align-items: center; gap: 12px; cursor: default;
-}
-.recipe:hover { border-color: #888; }
-.recipe-icon { font-size: 26px; width: 36px; text-align: center; }
-.recipe-info { flex: 1; }
-.recipe-name { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
-.recipe-ing { font-size: 12px; color: #aaa; }
-.recipe-btn {
-    background: #ffd54f; border: none; border-radius: 6px;
-    padding: 8px 14px; font-weight: bold; cursor: pointer;
-    font-size: 13px; color: #000;
-}
-.recipe-btn:hover { background: #fff176; }
-.recipe-btn:active { transform: scale(0.94); }
-#crafting-hint { margin-top: 10px; font-size: 13px; color: #ffd54f;
-    font-weight: bold; text-align: center; min-height: 18px; }
 
 .hidden { display: none !important; }
 
-/* Стартовое меню */
-#start-screen {
-    position: fixed; inset: 0; background: rgba(8,12,20,0.94);
-    z-index: 100; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
+/* ===== СТАТЫ ===== */
+#hud-stats {
+    position: fixed; top: 14px; left: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 10;
 }
-#start-screen h1 {
-    font-size: 52px; color: #ffd54f; margin-bottom: 8px;
-    text-shadow: 3px 3px 0 #000; letter-spacing: 5px;
+.stat {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(10,10,14,0.75);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 5px 10px;
+    backdrop-filter: blur(4px);
 }
-#start-screen p { font-size: 18px; color: #ccc; margin-bottom: 28px; }
-#btn-start {
-    background: #ffd54f; border: none; border-radius: 10px;
-    padding: 16px 48px; font-size: 22px; font-weight: bold;
-    color: #000; cursor: pointer; box-shadow: 0 5px 0 #b38a14;
+.stat-ico { font-size: 16px; width: 20px; text-align: center; }
+.stat-bar {
+    width: 150px; height: 12px;
+    background: #1a1a20;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #333;
+}
+.fill { height: 100%; width: 100%; transition: width 0.25s; }
+.fill-hp     { background: linear-gradient(90deg, #c0392b, #e74c3c); }
+.fill-hunger { background: linear-gradient(90deg, #d35400, #f39c12); }
+.fill-sanity { background: linear-gradient(90deg, #2980b9, #3498db); }
+.stat-num {
+    font-size: 13px; font-weight: bold; min-width: 30px;
+    text-align: right; color: #ddd;
+}
+
+/* ===== ЧАСЫ ===== */
+#hud-clock {
+    position: fixed; top: 14px; left: 50%;
+    transform: translateX(-50%);
+    text-align: center; z-index: 10;
+    background: rgba(10,10,14,0.75);
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 6px 20px;
+    backdrop-filter: blur(4px);
+}
+#clock-ico { font-size: 24px; }
+#clock-day { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+#clock-phase { font-size: 12px; color: #aaa; }
+
+/* ===== ИНВЕНТАРЬ ===== */
+#hud-inventory {
+    position: fixed; bottom: 14px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+}
+#inv-slots {
+    display: flex; gap: 6px;
+    background: rgba(10,10,14,0.8);
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 8px;
+    backdrop-filter: blur(4px);
+}
+.slot {
+    width: 54px; height: 54px;
+    background: #16161c;
+    border: 2px solid #333;
+    border-radius: 8px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.1s;
+}
+.slot:hover { transform: translateY(-3px); border-color: #f1c40f; }
+.slot.equipped { border-color: #f1c40f; box-shadow: 0 0 8px rgba(241,196,15,0.5); }
+.slot .qty {
+    position: absolute; bottom: 2px; right: 4px;
+    font-size: 11px; font-weight: bold;
+    color: #fff; text-shadow: 1px 1px 2px #000;
+}
+.slot .keyhint {
+    position: absolute; top: 1px; left: 4px;
+    font-size: 9px; color: #666;
+}
+
+/* ===== ТУЛТИП ===== */
+#tooltip {
+    position: fixed; z-index: 20;
+    background: rgba(10,10,14,0.92);
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    pointer-events: none;
+    max-width: 240px;
+}
+#tooltip .tt-name { font-weight: bold; color: #f1c40f; }
+#tooltip .tt-sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+/* ===== ТОСТЫ ===== */
+#toast {
+    position: fixed; bottom: 90px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: flex; flex-direction: column; gap: 6px;
+    align-items: center;
+    pointer-events: none;
+}
+.toast-msg {
+    background: rgba(10,10,14,0.9);
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 14px;
+    animation: toastIn 0.2s ease, toastOut 0.4s ease 2.2s forwards;
+}
+@keyframes toastIn  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(-10px); } }
+
+/* ===== КРАФТ ===== */
+#craft-panel {
+    position: fixed; top: 50%; right: 20px;
+    transform: translateY(-50%);
+    width: 330px; max-height: 80vh;
+    background: rgba(12,12,16,0.95);
+    border: 1px solid #444;
+    border-radius: 12px;
+    z-index: 30;
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+}
+.panel-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #333;
+    font-weight: bold; color: #f1c40f;
+}
+#craft-close {
+    background: none; border: none; color: #888;
+    font-size: 16px; cursor: pointer;
+}
+#craft-close:hover { color: #fff; }
+#craft-list {
+    padding: 10px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+}
+.recipe {
+    display: flex; align-items: center; gap: 10px;
+    background: #16161c;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 9px 11px;
+}
+.recipe.can { border-color: #27ae60; }
+.recipe:hover { background: #1d1d24; }
+.recipe-ico { font-size: 26px; width: 34px; text-align: center; }
+.recipe-info { flex: 1; }
+.recipe-name { font-size: 14px; font-weight: bold; }
+.recipe-cost { font-size: 11px; color: #aaa; margin-top: 2px; }
+.recipe-cost .ok { color: #2ecc71; }
+.recipe-cost .no { color: #e74c3c; }
+.recipe-btn {
+    background: #f1c40f; border: none;
+    border-radius: 6px;
+    padding: 7px 13px;
+    font-weight: bold; cursor: pointer;
+    color: #111; font-size: 13px;
+}
+.recipe-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+.recipe-btn:not(:disabled):hover { background: #f5e050; }
+
+/* ===== СТАРТ / СМЕРТЬ ===== */
+#start-screen, #death-screen {
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, rgba(20,18,30,0.94), rgba(5,5,8,0.98));
+    z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+}
+#start-screen h1, #death-screen h1 {
+    font-size: 54px; letter-spacing: 6px;
+    color: #e6b93c;
+    text-shadow: 3px 3px 0 #000, 0 0 30px rgba(230,185,60,0.4);
+    margin-bottom: 10px;
+}
+#death-screen h1 { color: #e74c3c; text-shadow: 3px 3px 0 #000, 0 0 30px rgba(231,76,60,0.4); }
+.tagline { color: #bbb; font-size: 17px; margin-bottom: 30px; letter-spacing: 1px; }
+.controls {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px 30px; margin-bottom: 36px;
+    font-size: 15px; color: #999; text-align: left;
+}
+.controls b {
+    color: #eee; background: #222;
+    padding: 2px 8px; border-radius: 4px;
+    border: 1px solid #444; font-size: 13px;
+}
+#btn-start, #btn-restart {
+    background: #e6b93c; border: none;
+    border-radius: 10px;
+    padding: 16px 50px;
+    font-size: 21px; font-weight: bold;
+    color: #111; cursor: pointer;
+    letter-spacing: 2px;
+    box-shadow: 0 5px 0 #96771e;
     transition: transform 0.1s;
 }
-#btn-start:hover { background: #fff176; transform: translateY(-2px); }
-#btn-start:active { transform: translateY(3px); box-shadow: none; }
-.controls-hint {
-    margin-top: 34px; font-size: 15px; color: #999;
-    max-width: 640px; line-height: 2;
-}
-.controls-hint strong { color: #ffd54f; font-size: 16px; }
-.controls-hint b { color: #ddd; background: #222; padding: 2px 8px;
-    border-radius: 4px; border: 1px solid #444; }
+#btn-restart { background: #e74c3c; color: #fff; box-shadow: 0 5px 0 #922b21; }
+#btn-start:hover, #btn-restart:hover { transform: translateY(-2px); }
+#btn-start:active, #btn-restart:active { transform: translateY(3px); box-shadow: none; }
+#death-reason { font-size: 18px; color: #ccc; margin-bottom: 8px; }
+#death-stats { font-size: 15px; color: #888; margin-bottom: 30px; }
 
-/* Game Over / Ошибка */
-#game-over, #load-error {
-    position: fixed; inset: 0; background: rgba(10,10,10,0.92);
-    z-index: 100; display: none; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
+/* ===== КНОПКА КРАФТА ===== */
+#btn-craft-toggle {
+    position: fixed; bottom: 14px; right: 14px;
+    width: 56px; height: 56px;
+    font-size: 26px;
+    background: rgba(10,10,14,0.85);
+    border: 2px solid #555;
+    border-radius: 12px;
+    cursor: pointer; z-index: 15;
 }
-.go-title { font-size: 52px; color: #f44336; margin-bottom: 14px;
-    text-shadow: 2px 2px 0 #000; }
-.go-sub { font-size: 20px; color: #eee; margin-bottom: 30px; line-height: 1.6; }
-#btn-restart {
-    background: #ffd54f; border: none; border-radius: 10px;
-    padding: 16px 44px; font-size: 20px; font-weight: bold;
-    cursor: pointer; box-shadow: 0 4px 0 #b38a14;
-}
-#btn-restart:hover { background: #fff176; }
+#btn-craft-toggle:hover { border-color: #f1c40f; }
