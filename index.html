@@ -63,7 +63,7 @@
             <div><b>W A S D</b> — движение</div>
             <div><b>Мышь</b> — прицел · <b>ЛКМ</b> — удар / сбор / еда</div>
             <div><b>E</b> — инвентарь · <b>C</b> — крафт</div>
-            <div><b>Пробел</b> — рывок (спринт)</div>
+            <div><b>Пробел</b> — рывок · <b>Esc / P</b> — пауза</div>
         </div>
         <button id="btn-start">НАЧАТЬ ВЫЖИВАНИЕ</button>
     </div>
@@ -74,6 +74,20 @@
         <p id="death-reason">Голод свалил вас.</p>
         <p id="death-stats">Продержались: 1 день</p>
         <button id="btn-restart">ПОПРОБОВАТЬ СНОВА</button>
+    </div>
+
+    <!-- Экран паузы -->
+    <div id="pause-screen" class="hidden">
+        <h1>ПАУЗА</h1>
+        <p class="tagline">Игра остановлена</p>
+        <p id="pause-day" class="pause-stats">День 1</p>
+        <button id="btn-resume">ПРОДОЛЖИТЬ</button>
+        <div class="controls pause-controls">
+            <div><b>W A S D</b> — движение</div>
+            <div><b>ЛКМ</b> — удар / сбор</div>
+            <div><b>E</b> — инвентарь · <b>C</b> — крафт</div>
+            <div><b>Esc / P</b> — пауза</div>
+        </div>
     </div>
 
     <!-- Крафт-кнопка -->

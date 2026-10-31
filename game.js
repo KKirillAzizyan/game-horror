@@ -93,6 +93,7 @@ let W = 0, H = 0;
 
 const G = {
     running: false,
+    paused: false,
     time: 0,          // общее время, сек
     day: 1,
     dayPhase: 0,      // 0..1 внутри цикла
@@ -531,10 +532,10 @@ function updateSpawns(dt) {
    --------------------------------------------------------------------- */
 function updatePlayer(dt) {
     let mx = 0, my = 0;
-    if (G.keys["w"] || G.keys["arrowup"]) my -= 1;
-    if (G.keys["s"] || G.keys["arrowdown"]) my += 1;
-    if (G.keys["a"] || G.keys["arrowleft"]) mx -= 1;
-    if (G.keys["d"] || G.keys["arrowright"]) mx += 1;
+    if (G.keys["up"]) my -= 1;
+    if (G.keys["down"]) my += 1;
+    if (G.keys["left"]) mx -= 1;
+    if (G.keys["right"]) mx += 1;
 
     if (mx || my) {
         const len = Math.hypot(mx, my);
@@ -544,7 +545,7 @@ function updatePlayer(dt) {
 
     G.dashCd = Math.max(0, G.dashCd - dt);
     G.dashT = Math.max(0, G.dashT - dt);
-    let speed = G.keys["shift"] ? CFG.sprintSpeed : CFG.playerSpeed;
+    let speed = G.keys["sprint"] ? CFG.sprintSpeed : CFG.playerSpeed;
     if (G.dashT > 0) speed *= CFG.dashBoost;
 
     const nx = G.px + mx * speed * dt;
@@ -599,33 +600,68 @@ function updateStats(dt) {
 /* ---------------------------------------------------------------------
    20. ВВОД
    --------------------------------------------------------------------- */
+/* Маппинг физической клавиши (e.code) → логическое действие.
+   e.code НЕ зависит от раскладки (русская/английская и т.д.),
+   поэтому WASD работает всегда. */
+function mapCode(code) {
+    switch (code) {
+        case "KeyW": case "ArrowUp":    return "up";
+        case "KeyS": case "ArrowDown":  return "down";
+        case "KeyA": case "ArrowLeft":  return "left";
+        case "KeyD": case "ArrowRight": return "right";
+        case "ShiftLeft": case "ShiftRight": return "sprint";
+        default: return null;
+    }
+}
+
 function setupInput() {
     window.addEventListener("keydown", e => {
-        const k = e.key.toLowerCase();
-        G.keys[k] = true;
+        // движение/спринт — по физической клавише, работает на любой раскладке
+        const m = mapCode(e.code);
+        if (m) { G.keys[m] = true; if (G.running) e.preventDefault(); }
+
         if (!G.running) return;
 
-        if (k === "e") toggleInventoryHint();
-        if (k === "c") toggleCraft();
-        if (k === "r" || k === " ") {
+        // ПАУЗА: Escape или P
+        if (e.code === "Escape" || e.code === "KeyP") {
+            e.preventDefault();
+            if (!document.getElementById("craft-panel").classList.contains("hidden")) {
+                toggleCraft();   // сначала закрываем крафт
+            } else {
+                togglePause();
+            }
+            return;
+        }
+        if (G.paused) return;   // в паузе остальные действия заблокированы
+
+        if (e.code === "KeyE") toggleInventoryHint();
+        if (e.code === "KeyC") toggleCraft();
+        if (e.code === "KeyR" || e.code === "Space") {
             if (G.dashCd <= 0 && G.dashT <= 0) {
                 G.dashT = CFG.dashTime;
                 G.dashCd = CFG.dashCd;
             }
-            if (k === " ") e.preventDefault();
+            if (e.code === "Space") e.preventDefault();
         }
         // быстрое использование: 1-9 = слот инвентаря
-        if (k >= "1" && k <= "9") slotAction(parseInt(k, 10) - 1);
-        if (k === "q") dropOrUnequip();
+        if (e.code.indexOf("Digit") === 0) {
+            const n = parseInt(e.code.slice(5), 10);
+            if (n >= 1 && n <= 9) slotAction(n - 1);
+        }
+        if (e.code === "KeyQ") dropOrUnequip();
     });
-    window.addEventListener("keyup", e => { G.keys[e.key.toLowerCase()] = false; });
+
+    window.addEventListener("keyup", e => {
+        const m = mapCode(e.code);
+        if (m) G.keys[m] = false;
+    });
 
     canvas.addEventListener("mousemove", e => {
         G.mouse.x = e.clientX;
         G.mouse.y = e.clientY;
     });
     canvas.addEventListener("mousedown", e => {
-        if (e.button !== 0 || !G.running) return;
+        if (e.button !== 0 || !G.running || G.paused) return;
         if (G.gatherCd > 0) return;
         G.gatherCd = 0.28;
 
@@ -647,6 +683,21 @@ function setupInput() {
         }
     });
     canvas.addEventListener("contextmenu", e => e.preventDefault());
+}
+
+/* Пауза: останавливаем логику, мир продолжает рендериться */
+function togglePause() {
+    if (!G.running) return;
+    G.paused = !G.paused;
+    const el = document.getElementById("pause-screen");
+    if (G.paused) {
+        G.keys = {};                      // сбрасываем зажатые клавиши
+        el.classList.remove("hidden");
+        document.getElementById("pause-day").textContent =
+            "День " + G.day + " · HP " + Math.ceil(G.hp) + " · Голод " + Math.ceil(G.hunger);
+    } else {
+        el.classList.add("hidden");
+    }
 }
 
 function dropOrUnequip() {
@@ -1267,7 +1318,7 @@ function drawCreature(c) {
 
 function drawPlayer() {
     const [sx, sy] = worldToScreen(G.px, G.py);
-    const walk = (G.keys["w"] || G.keys["a"] || G.keys["s"] || G.keys["d"]) ? Math.sin(G.time * 14) * 3 : 0;
+    const walk = (G.keys["up"] || G.keys["left"] || G.keys["down"] || G.keys["right"]) ? Math.sin(G.time * 14) * 3 : 0;
 
     // тело
     ctx.fillStyle = "#c94f4f";
@@ -1370,6 +1421,7 @@ function loop(now) {
     const dt = Math.min(0.05, (now - lastT) / 1000);
     lastT = now;
     if (!G.running) { draw(); return; }
+    if (G.paused) { draw(); return; }   // пауза: рендерим, но логика стоит
 
     G.time += dt;
     G.dayPhase += dt / CFG.dayLength;
@@ -1410,6 +1462,9 @@ function loop(now) {
    --------------------------------------------------------------------- */
 function startGame() {
     G.running = true;
+    G.paused = false;
+    G.keys = {};
+    document.getElementById("pause-screen").classList.add("hidden");
     G.time = 0; G.day = 1; G.dayPhase = 0.05;
     G.hp = G.maxHp = 100; G.hunger = 100; G.sanity = 100;
     G.px = CFG.worldW / 2; G.py = CFG.worldH / 2;
@@ -1440,6 +1495,7 @@ document.getElementById("btn-restart").addEventListener("click", () => {
     document.getElementById("death-screen").classList.add("hidden");
     startGame();
 });
+document.getElementById("btn-resume").addEventListener("click", togglePause);
 document.getElementById("craft-close").addEventListener("click", toggleCraft);
 document.getElementById("btn-craft-toggle").addEventListener("click", toggleCraft);
 
