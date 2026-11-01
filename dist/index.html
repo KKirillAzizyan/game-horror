@@ -340,10 +340,10 @@ html, body {
         <h1>ГОЛОДНЫЕ ПУСТОШИ</h1>
         <p class="tagline">Выживи. Добывай. Создавай. Переживи ночь.</p>
         <div class="controls">
-            <div><b>W A S D</b> — движение</div>
-            <div><b>Мышь</b> — прицел · <b>ЛКМ</b> — удар / сбор / еда</div>
-            <div><b>E</b> — инвентарь · <b>C</b> — крафт</div>
-            <div><b>Пробел</b> — рывок · <b>Esc / P</b> — пауза</div>
+            <div><b>W A S D</b> — движение · <b>Мышь</b> — прицел · <b>ЛКМ</b> — удар / сбор</div>
+            <div><b>E</b> — инвентарь · <b>C</b> — крафт · <b>Пробел</b> — рывок</div>
+            <div>Постройки: создай в крафте, кликни в инвентаре, <b>ЛКМ</b> — поставить</div>
+            <div><b>ПКМ по предмету</b> — выбросить · <b>Esc / P</b> — пауза</div>
         </div>
         <button id="btn-start">НАЧАТЬ ВЫЖИВАНИЕ</button>
     </div>
@@ -384,7 +384,7 @@ html, body {
    1. КОНФИГУРАЦИЯ
    --------------------------------------------------------------------- */
 const CFG = {
-    worldW: 3600, worldH: 3600,
+    worldW: 6400, worldH: 6400,  // большая карта
     playerSpeed: 190,          // px/sec
     sprintSpeed: 300,
     dashTime: 0.18, dashCd: 1.4, dashBoost: 3.2,
@@ -399,6 +399,9 @@ const CFG = {
     starvingDps: 4,
     stackMax: 99,
     invSlots: 10,
+    placeRange: 280,           // дальность постройки от игрока
+    safeRadius: 215,           // радиус защиты дома (отпугивает тварей)
+    miniSize: 170,             // размер миникарты
 };
 
 /* ---------------------------------------------------------------------
@@ -420,7 +423,18 @@ const ITEMS = {
     pickaxe:   { name: "Кирка",       icon: "⛏️", cat: "tool", dmg: 10, onRock: true },
     spear:     { name: "Копьё",       icon: "🗡️", cat: "tool", dmg: 26 },
     torch:     { name: "Факел",       icon: "🕯️", cat: "tool", dmg: 6, light: 150 },
-    campfire:  { name: "Костёр",      icon: "🔥", cat: "build", light: 260 },
+    campfire:  { name: "Костёр",      icon: "🔥", cat: "build" },
+    house:     { name: "Дом",         icon: "🏠", cat: "build" },
+    wall:      { name: "Каменная стена", icon: "🧱", cat: "build" },
+    flag:      { name: "Флажок",      icon: "🚩", cat: "build" },
+};
+
+/* Мета-данные построек (радиус, твёрдость, свет, эффекты) */
+const STRUCTURES = {
+    campfire: { name: "Костёр", r: 26, solid: false, light: 260, cook: true },
+    house:    { name: "Дом",    r: 46, solid: true,  light: 175, shelter: true },
+    wall:     { name: "Стена",  r: 22, solid: true },
+    flag:     { name: "Флажок", r: 14, solid: false, beacon: true },
 };
 
 const RECIPES = [
@@ -428,8 +442,11 @@ const RECIPES = [
     { out: "pickaxe",  cost: { twig: 3, rock: 2 } },
     { out: "spear",    cost: { twig: 4, flint: 3 } },
     { out: "torch",    cost: { twig: 2, flint: 1, grass: 1 } },
-    { out: "campfire", cost: { log: 4, rock: 3 } },
     { out: "bandage",  cost: { grass: 3, berry: 2 } },
+    { out: "campfire", cost: { log: 4, rock: 3 } },
+    { out: "house",    cost: { log: 6, rock: 8, grass: 4 } },
+    { out: "wall",     cost: { rock: 4 } },
+    { out: "flag",     cost: { twig: 3, grass: 2 } },
 ];
 
 /* ---------------------------------------------------------------------
@@ -437,7 +454,7 @@ const RECIPES = [
    --------------------------------------------------------------------- */
 const NODE_TYPES = {
     tree:      { name: "Дерево",        hp: 3, tool: "axe",     drop: "log",   r: 26, col: "#2f6b3a" },
-    boulder:   { name: "Валун",         hp: 4, tool: "pickaxe", drop: "rock",  r: 24, col: "#777" },
+    boulder:   { name: "Валун",         hp: 4, tool: "pickaxe", drop: "rock",  r: 24, col: "#777", dropQty: 3 },
     berryBush: { name: "Ягодный куст",  hp: 1, tool: null,      drop: "berry", r: 20, col: "#7b2d5e", dropQty: 3 },
     grassTuft: { name: "Пучок травы",   hp: 1, tool: null,      drop: "grass", r: 15, col: "#4e9c3f", dropQty: 2 },
     flintRock: { name: "Кремень",       hp: 2, tool: null,      drop: "flint", r: 14, col: "#5a5170", dropQty: 2 },
@@ -485,6 +502,8 @@ const G = {
     nodes: [],        // ресурсы
     creatures: [],    // животные
     structures: [],   // постройки
+    dropped: [],      // выброшенные на землю предметы (помечены на миникарте)
+    placing: null,    // id предмета в режиме постройки (null = не строим)
     particles: [],    // всплывающие цифры/эффекты
     floaters: [],
     camX: 0, camY: 0,
@@ -552,7 +571,7 @@ function spawnNode(type, x, y) {
 }
 function generateWorld() {
     G.nodes = [];
-    const N = 620;
+    const N = 1500;
     for (let i = 0; i < N; i++) {
         const x = rnd(80, CFG.worldW - 80);
         const y = rnd(80, CFG.worldH - 80);
@@ -581,7 +600,7 @@ function generateWorld() {
 
 function respawnNodes(dt) {
     // мир восстанавливается со временем
-    if (G.nodes.length < 640 && Math.random() < dt * 3) {
+    if (G.nodes.length < 1550 && Math.random() < dt * 3) {
         const edge = Math.random() < 0.5;
         let x, y;
         if (edge) {
@@ -789,6 +808,11 @@ function craft(recipe) {
    --------------------------------------------------------------------- */
 function updateCreatures(dt) {
     const night = phaseInfo().night;
+    // укрытие: рядом с домом твари не атакуют и отпугиваются
+    let sheltered = false;
+    for (const s of G.structures) {
+        if (s.type === "house" && dist(G.px, G.py, s.x, s.y) < CFG.safeRadius) { sheltered = true; break; }
+    }
     for (const c of G.creatures) {
         const def = CREATURE_TYPES[c.type];
         c.hitFlash = Math.max(0, c.hitFlash - dt * 4);
@@ -801,7 +825,7 @@ function updateCreatures(dt) {
         let speed = def.spd;
 
         // ночью пассивные прячутся, враждебные активнее
-        const isAggro = !def.passive && (def.aggro || 0) > 0 && d < (def.aggro || 0) &&
+        const isAggro = !sheltered && !def.passive && (def.aggro || 0) > 0 && d < (def.aggro || 0) &&
                         (!def.night || night) && (!def.boss || G.bossTimer <= 0 || true);
 
         if (def.passive) {
@@ -832,6 +856,9 @@ function updateCreatures(dt) {
                     damagePlayer(def.dmg, def.boss ? "Вас убил " + def.name : "Вас растерзали звери");
                     c.atkCd = def.boss ? 1.5 : 1.1;
                 }
+            } else if (sheltered && d < 360) {
+                // в зоне укрытия — отпугиваем врагов
+                mvx = -dx / d; mvy = -dy / d; speed *= 0.8;
             } else {
                 c.wanderT -= dt;
                 if (c.wanderT <= 0) {
@@ -847,6 +874,18 @@ function updateCreatures(dt) {
 
         c.x = clamp(c.x + mvx * speed * dt, c.r, CFG.worldW - c.r);
         c.y = clamp(c.y + mvy * speed * dt, c.r, CFG.worldH - c.r);
+
+        // столкновения с постройками (дом/стена блокируют тварей)
+        for (const s of G.structures) {
+            const sd = STRUCTURES[s.type];
+            if (!sd || !sd.solid) continue;
+            const bd = dist(c.x, c.y, s.x, s.y);
+            const minR = c.r + sd.r;
+            if (bd > 0 && bd < minR) {
+                c.x = s.x + (c.x - s.x) / bd * minR;
+                c.y = s.y + (c.y - s.y) / bd * minR;
+            }
+        }
 
         // расталкивание между собой (мягкое)
         for (const o of G.creatures) {
@@ -953,12 +992,17 @@ function updateStats(dt) {
     if (night) G.sanity = clamp(G.sanity - CFG.sanityNightDecay * dt, 0, 100);
     else G.sanity = clamp(G.sanity + CFG.sanityDayGain * dt, 0, 100);
 
-    // рядом с костром — уют и рассудок
-    let nearFire = false;
+    // рядом с костром — уют и рассудок; рядом с домом — укрытие и восстановление
+    let nearFire = false, sheltered = false;
     for (const s of G.structures) {
-        if (s.type === "campfire" && dist(G.px, G.py, s.x, s.y) < 170) { nearFire = true; break; }
+        if (s.type === "campfire" && dist(G.px, G.py, s.x, s.y) < 170) nearFire = true;
+        if (s.type === "house" && dist(G.px, G.py, s.x, s.y) < CFG.safeRadius) sheltered = true;
     }
     if (nearFire && night) G.sanity = clamp(G.sanity + 14 * dt, 0, 100);
+    if (sheltered) {
+        G.sanity = clamp(G.sanity + (night ? 11 : 5) * dt, 0, 100);
+        if (G.hp < G.maxHp) G.hp = clamp(G.hp + 2.2 * dt, 0, G.maxHp);
+    }
 
     if (G.hunger <= 0) {
         G.hp = clamp(G.hp - CFG.starvingDps * dt, 0, G.maxHp);
@@ -998,9 +1042,10 @@ function setupInput() {
 
         if (!G.running) return;
 
-        // ПАУЗА: Escape или P
+        // ПАУЗА: Escape или P (сначала отменяем постройку/крафт)
         if (e.code === "Escape" || e.code === "KeyP") {
             e.preventDefault();
+            if (G.placing) { cancelPlacing(); return; }
             if (!document.getElementById("craft-panel").classList.contains("hidden")) {
                 toggleCraft();   // сначала закрываем крафт
             } else {
@@ -1037,7 +1082,16 @@ function setupInput() {
         G.mouse.y = e.clientY;
     });
     canvas.addEventListener("mousedown", e => {
-        if (e.button !== 0 || !G.running || G.paused) return;
+        if (!G.running || G.paused) return;
+
+        // режим постройки
+        if (G.placing) {
+            if (e.button === 0) tryPlace();
+            else if (e.button === 2) cancelPlacing();
+            return;
+        }
+
+        if (e.button !== 0) return;
         if (G.gatherCd > 0) return;
         G.gatherCd = 0.28;
 
@@ -1104,7 +1158,79 @@ function itemClick(id) {
         if (G.equipped) toast("Экипировано: " + it.icon + " " + it.name, "#f1c40f");
         return;
     }
-    if (it.cat === "build") { toast("Выберите место и нажмите ЛКМ рядом, чтобы построить. (Пока — в разработке)", "#aaa"); }
+    if (it.cat === "build") {
+        // включаем/выключаем режим постройки
+        if (G.placing === id) { cancelPlacing(); return; }
+        G.placing = id;
+        toast("Ставьте: " + it.icon + " " + it.name + " · ЛКМ — поставить · ПКМ/Esc — отмена", "#3498db");
+        renderInventory();
+        return;
+    }
+}
+
+/* ---------------------------------------------------------------------
+   ПОСТРОЙКИ: режим размещения
+   --------------------------------------------------------------------- */
+function cursorWorld() {
+    return [G.mouse.x - W / 2 + G.camX, G.mouse.y - H / 2 + G.camY];
+}
+function canPlace(wx, wy, id) {
+    const def = STRUCTURES[id];
+    if (!def) return [false, "Неизвестная постройка"];
+    const r = def.r;
+    if (wx < r + 12 || wy < r + 12 || wx > CFG.worldW - r - 12 || wy > CFG.worldH - r - 12)
+        return [false, "Слишком близко к краю мира"];
+    if (dist(G.px, G.py, wx, wy) > CFG.placeRange)
+        return [false, "Слишком далеко — подойдите ближе"];
+    for (const n of G.nodes)
+        if (dist(wx, wy, n.x, n.y) < r + n.r) return [false, "Мешает: " + NODE_TYPES[n.type].name];
+    for (const s of G.structures) {
+        const sr = STRUCTURES[s.type].r;
+        if (dist(wx, wy, s.x, s.y) < r + sr) return [false, "Здесь уже есть постройка"];
+    }
+    for (const c of G.creatures)
+        if (dist(wx, wy, c.x, c.y) < r + c.r + 8) return [false, "Здесь существо"];
+    return [true, ""];
+}
+function placeStructure(type, x, y) {
+    const hp = type === "house" ? 60 : type === "wall" ? 45 : type === "campfire" ? 30 : 15;
+    G.structures.push({ type, x, y, born: G.time, hp, maxHp: hp });
+}
+function tryPlace() {
+    const id = G.placing;
+    if (!id) return;
+    const [wx, wy] = cursorWorld();
+    const [ok, why] = canPlace(wx, wy, id);
+    if (!ok) { toast(why, "#e67e22"); return; }
+    if (!removeItem(id, 1)) { cancelPlacing(); return; }
+    placeStructure(id, wx, wy);
+    toast("Построено: " + ITEMS[id].icon + " " + ITEMS[id].name, "#2ecc71");
+    for (let i = 0; i < 12; i++)
+        G.particles.push({ x: wx, y: wy, vx: rnd(-70, 70), vy: rnd(-70, 70), t: 0, life: 0.5, col: "#c9a24a" });
+    if (countItem(id) <= 0) G.placing = null;   // предмет кончился — выходим из режима
+    renderInventory();
+}
+function cancelPlacing() {
+    if (G.placing) { G.placing = null; renderInventory(); toast("Постройка отменена", "#aaa"); }
+}
+
+/* Выброс предмета на землю (ПКМ по слоту) — предмет помечается на миникарте */
+function dropItem(id, qty) {
+    qty = qty || 1;
+    if (!removeItem(id, qty)) return;
+    G.dropped.push({ id, qty, x: G.px + rnd(-26, 26), y: G.py + rnd(-26, 26), t: 0 });
+    toast("Выброшено: " + ITEMS[id].icon + " ×" + qty, "#aaa");
+}
+function updateDropped(dt) {
+    for (const d of G.dropped) {
+        d.t += dt;
+        if (dist(G.px, G.py, d.x, d.y) < 42) {   // подбираем, наступив
+            addItem(d.id, d.qty);
+            floater(d.x, d.y - 14, "+" + d.qty + " " + ITEMS[d.id].name, "#2ecc71");
+            d.done = true;
+        }
+    }
+    if (G.dropped.some(d => d.done)) G.dropped = G.dropped.filter(d => !d.done);
 }
 
 /* ---------------------------------------------------------------------
@@ -1123,8 +1249,9 @@ function renderInventory() {
             const it = ITEMS[id];
             div.innerHTML = `<span>${it.icon}</span><span class="qty">${G.inv[id]}</span><span class="keyhint">${i + 1}</span>`;
             if (G.equipped === id) div.classList.add("equipped");
-            div.title = it.name;
+            div.title = it.name + " (ПКМ — выбросить на землю)";
             div.addEventListener("click", () => itemClick(id));
+            div.addEventListener("contextmenu", e => { e.preventDefault(); e.stopPropagation(); dropItem(id, 1); });
         }
         el.appendChild(div);
     }
@@ -1270,40 +1397,27 @@ function draw() {
     // ---- постройки ----
     for (const s of G.structures) {
         const [sx, sy] = worldToScreen(s.x, s.y);
-        if (sx < -80 || sx > W + 80 || sy < -80 || sy > H + 80) continue;
-        if (s.type === "campfire") {
-            // костёр
-            ctx.fillStyle = "#3b2a1c";
-            ctx.beginPath(); ctx.arc(sx, sy, 24, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = "#5a4028";
-            ctx.fillRect(sx - 16, sy - 5, 32, 8);
-            // пламя
-            const fl = 0.7 + Math.sin(G.time * 9) * 0.3;
-            ctx.fillStyle = "#ff8c1a";
-            ctx.beginPath();
-            ctx.moveTo(sx - 10, sy);
-            ctx.quadraticCurveTo(sx, sy - 30 * fl, sx + 10, sy);
-            ctx.fill();
-            ctx.fillStyle = "#ffd23f";
-            ctx.beginPath();
-            ctx.moveTo(sx - 5, sy);
-            ctx.quadraticCurveTo(sx, sy - 17 * fl, sx + 5, sy);
-            ctx.fill();
-        }
+        if (sx < -100 || sx > W + 100 || sy < -100 || sy > H + 100) continue;
+        drawStructure(s, sx, sy);
     }
 
-    // ---- ресурсы (сортировка по y для псевдо-3D) ----
+    // ---- ресурсы / выброшенные предметы (сортировка по y для псевдо-3D) ----
     const drawable = [];
     for (const n of G.nodes) drawable.push({ y: n.y, kind: "node", o: n });
     for (const c of G.creatures) drawable.push({ y: c.y, kind: "creature", o: c });
+    for (const d of G.dropped) drawable.push({ y: d.y, kind: "dropped", o: d });
     drawable.push({ y: G.py, kind: "player", o: null });
     drawable.sort((a, b) => a.y - b.y);
 
     for (const d of drawable) {
         if (d.kind === "node") drawNode(d.o);
         else if (d.kind === "creature") drawCreature(d.o);
+        else if (d.kind === "dropped") drawDropped(d.o);
         else drawPlayer();
     }
+
+    // ---- призрак постройки ----
+    if (G.placing) drawPlacementGhost();
 
     // ---- частицы ----
     for (const p of G.particles) {
@@ -1340,6 +1454,7 @@ function draw() {
         drawLightHole(G.px, G.py, equippedLightRadius(), night);
         for (const s of G.structures) {
             if (s.type === "campfire") drawLightHole(s.x, s.y, 260, night);
+            else if (s.type === "house") drawLightHole(s.x, s.y, 175, night);
         }
     }
 
@@ -1367,11 +1482,182 @@ function draw() {
         }
         ctx.globalAlpha = 1;
     }
+
+    // ---- миникарта (поверх всего) ----
+    drawMinimap();
 }
 
 function equippedLightRadius() {
     if (G.equipped && ITEMS[G.equipped].light) return ITEMS[G.equipped].light;
     return 95;
+}
+
+/* Отрисовка постройки по типу */
+function drawStructure(s, sx, sy) {
+    if (s.type === "campfire") {
+        ctx.fillStyle = "#3b2a1c";
+        ctx.beginPath(); ctx.arc(sx, sy, 24, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#5a4028";
+        ctx.fillRect(sx - 16, sy - 5, 32, 8);
+        const fl = 0.7 + Math.sin(G.time * 9) * 0.3;
+        ctx.fillStyle = "#ff8c1a";
+        ctx.beginPath();
+        ctx.moveTo(sx - 10, sy);
+        ctx.quadraticCurveTo(sx, sy - 30 * fl, sx + 10, sy);
+        ctx.fill();
+        ctx.fillStyle = "#ffd23f";
+        ctx.beginPath();
+        ctx.moveTo(sx - 5, sy);
+        ctx.quadraticCurveTo(sx, sy - 17 * fl, sx + 5, sy);
+        ctx.fill();
+    } else if (s.type === "house") {
+        // фундамент
+        ctx.fillStyle = "#6b4a2f";
+        ctx.fillRect(sx - 42, sy - 20, 84, 40);
+        // стены
+        ctx.fillStyle = "#8a5a37";
+        ctx.fillRect(sx - 38, sy - 34, 76, 44);
+        // крыша
+        ctx.fillStyle = "#a23b2e";
+        ctx.beginPath();
+        ctx.moveTo(sx - 46, sy - 32);
+        ctx.lineTo(sx, sy - 66);
+        ctx.lineTo(sx + 46, sy - 32);
+        ctx.closePath(); ctx.fill();
+        // дверь и окно
+        ctx.fillStyle = "#3a2416";
+        ctx.fillRect(sx - 10, sy - 14, 20, 24);
+        ctx.fillStyle = "#ffd23f";
+        ctx.fillRect(sx - 30, sy - 24, 12, 12);
+        ctx.fillRect(sx + 18, sy - 24, 12, 12);
+    } else if (s.type === "wall") {
+        ctx.fillStyle = "#6f6f78";
+        ctx.fillRect(sx - 22, sy - 14, 44, 26);
+        ctx.fillStyle = "#83838f";
+        for (let i = -22; i < 22; i += 11) ctx.fillRect(sx + i, sy - 20, 8, 8);
+        ctx.strokeStyle = "#4a4a52"; ctx.lineWidth = 2;
+        ctx.strokeRect(sx - 22, sy - 14, 44, 26);
+    } else if (s.type === "flag") {
+        ctx.fillStyle = "#7a5a34";
+        ctx.fillRect(sx - 2, sy - 30, 4, 34);
+        const wv = Math.sin(G.time * 4) * 4;
+        ctx.fillStyle = "#e74c3c";
+        ctx.beginPath();
+        ctx.moveTo(sx + 2, sy - 30);
+        ctx.lineTo(sx + 26, sy - 24 + wv);
+        ctx.lineTo(sx + 2, sy - 18);
+        ctx.closePath(); ctx.fill();
+        // маяк-мечка
+        ctx.globalAlpha = 0.5 + Math.sin(G.time * 3) * 0.25;
+        ctx.fillStyle = "#f1c40f";
+        ctx.beginPath(); ctx.arc(sx, sy - 30, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+}
+
+/* Выброшенный на землю предмет — светящаяся мечка с иконкой */
+function drawDropped(d) {
+    const [sx, sy] = worldToScreen(d.x, d.y);
+    if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) return;
+    const pulse = 0.5 + Math.sin(G.time * 4 + d.x) * 0.2;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = "#f1c40f";
+    ctx.beginPath(); ctx.arc(sx, sy, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.font = "16px Segoe UI Emoji, Segoe UI";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(ITEMS[d.id].icon, sx, sy);
+    ctx.textBaseline = "alphabetic";
+}
+
+/* Призрак постройки под курсором: зелёный = можно, красный = нельзя */
+function drawPlacementGhost() {
+    const id = G.placing;
+    const def = STRUCTURES[id];
+    if (!def) return;
+    const [wx, wy] = cursorWorld();
+    const [sx, sy] = worldToScreen(wx, wy);
+    const [ok] = canPlace(wx, wy, id);
+    ctx.globalAlpha = 0.6;
+    // радиус размещения от игрока
+    const [psx, psy] = worldToScreen(G.px, G.py);
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath(); ctx.arc(psx, psy, CFG.placeRange, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    // призрак
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = ok ? "#2ecc71" : "#e74c3c";
+    ctx.beginPath(); ctx.arc(sx, sy, def.r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.font = "28px Segoe UI Emoji, Segoe UI";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(ITEMS[id].icon, sx, sy);
+    ctx.textBaseline = "alphabetic";
+}
+
+/* Миникарта в углу: игрок, постройки, выброшенные предметы, флаги, боссы */
+function drawMinimap() {
+    const size = CFG.miniSize;
+    const pad = 12;
+    const mx = W - size - pad;
+    const my = H - size - pad;
+    const k = size / CFG.worldW;   // мировые → миникарта
+
+    // фон
+    ctx.fillStyle = "rgba(8,12,10,0.82)";
+    ctx.fillRect(mx, my, size, size);
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(mx, my, size, size);
+
+    // ресурсы (точки)
+    ctx.fillStyle = "rgba(120,180,120,0.5)";
+    for (const n of G.nodes) {
+        ctx.fillRect(mx + n.x * k, my + n.y * k, 1.5, 1.5);
+    }
+    // постройки
+    for (const s of G.structures) {
+        ctx.fillStyle = s.type === "campfire" ? "#ff8c1a" : s.type === "house" ? "#e0b060" : s.type === "flag" ? "#f1c40f" : "#999";
+        const px = mx + s.x * k, py = my + s.y * k;
+        const sz = s.type === "house" ? 4 : 3;
+        ctx.fillRect(px - sz / 2, py - sz / 2, sz, sz);
+    }
+    // выброшенные предметы (помечены ярко)
+    for (const d of G.dropped) {
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(mx + d.x * k, my + d.y * k, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    // враги/боссы (красные, боссы пульсируют)
+    for (const c of G.creatures) {
+        const def = CREATURE_TYPES[c.type];
+        if (def.passive) continue;
+        ctx.fillStyle = def.boss ? "#ff1744" : "#c0392b";
+        const px = mx + c.x * k, py = my + c.y * k;
+        if (def.boss) {
+            const p = 2 + Math.sin(G.time * 6) * 1;
+            ctx.beginPath(); ctx.arc(px, py, p, 0, Math.PI * 2); ctx.fill();
+        } else {
+            ctx.fillRect(px - 1, py - 1, 2, 2);
+        }
+    }
+    // игрок (белый + направление)
+    const plx = mx + G.px * k, ply = my + G.py * k;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(plx, ply, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(plx, ply);
+    ctx.lineTo(plx + Math.cos(G.facing) * 8, ply + Math.sin(G.facing) * 8);
+    ctx.stroke();
+
+    // подпись
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = "11px Segoe UI";
+    ctx.textAlign = "left";
+    ctx.fillText("Карта", mx + 6, my - 4);
 }
 function drawLightHole(wx, wy, radius, night) {
     const [sx, sy] = worldToScreen(wx, wy);
@@ -1808,6 +2094,7 @@ function loop(now) {
     updateCreatures(dt);
     updateSpawns(dt);
     respawnNodes(dt);
+    updateDropped(dt);
 
     // частицы
     for (const p of G.particles) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; }
@@ -1847,6 +2134,7 @@ function startGame() {
     G.camX = G.px; G.camY = G.py;
     G.inv = {}; G.equipped = null;
     G.creatures = []; G.structures = []; G.particles = []; G.floaters = [];
+    G.dropped = []; G.placing = null;
     G.spawnTimer = 1; G.bossTimer = 0;
     G.dashT = 0; G.dashCd = 0; G.gatherCd = 0;
     generateWorld();
@@ -1880,7 +2168,7 @@ renderInventory();
 requestAnimationFrame(loop);
 
 /* Отладочный хук */
-window.GameDebug = { G, startGame, spawnBoss, spawnCreature, addItem, NODE_TYPES, CREATURE_TYPES };
+window.GameDebug = { G, CFG, ITEMS, RECIPES, STRUCTURES, startGame, spawnBoss, spawnCreature, addItem, NODE_TYPES, CREATURE_TYPES, itemClick, dropItem, tryPlace, canPlace, cancelPlacing };
 </script>
 </body>
 </html>

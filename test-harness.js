@@ -94,7 +94,7 @@ let fakeNow = 1000;
 global.performance = { now: () => fakeNow };
 
 /* --- загрузка game.js --- */
-const code = fs.readFileSync(__dirname + "/game.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/game.js", "utf8");
 vm.runInThisContext(code, { filename: "game.js" });
 
 const G = global.window.GameDebug.G;
@@ -182,6 +182,59 @@ GameDebug.addItem("flint", 2);
 G.gatherCd = 0;
 // найти рецепт топора и нажать (прямой вызов через кнопки недоступен — проверим hasCost-логику через addItem+inv)
 check("материалы для топора есть", (G.inv["twig"] >= 3 && G.inv["flint"] >= 1));
+
+console.log("\n=== 8. Карта расширена ===");
+check("мир 6400x6400", GameDebug.CFG.worldW === 6400 && GameDebug.CFG.worldH === 6400);
+check("узлов >1400 (было 620)", G.nodes.length > 1400, "nodes=" + G.nodes.length);
+
+console.log("\n=== 9. Валун даёт 3 камня (киркой) ===");
+// изолированная точка без других узлов рядом
+const bx = 500, by = 500;
+G.nodes = G.nodes.filter(n => dist(n.x, n.y, bx, by) > 150);
+G.nodes.push({ id: 9999999, type: "boulder", x: bx, y: by, hp: 4, maxHp: 4, r: 24, shake: 0 });
+G.px = bx + 40; G.py = by;
+G.equipped = "pickaxe";
+const rockBefore = G.inv["rock"] || 0;
+for (let i = 0; i < 4; i++) { G.gatherCd = 0; elements["game"].__fire("mousedown", { button: 0 }); }
+check("валун дал 3 камня", (G.inv["rock"] - rockBefore) >= 3, "rock+" + (G.inv["rock"] - rockBefore));
+
+console.log("\n=== 10. Постройка костра (исправление 'нельзя поставить') ===");
+GameDebug.addItem("campfire", 1);
+GameDebug.itemClick("campfire");
+check("режим постройки включён", G.placing === "campfire");
+G.camX = G.px; G.camY = G.py;      // прицеливаемся в позицию игрока
+G.mouse.x = 640; G.mouse.y = 360;
+G.nodes = G.nodes.filter(n => dist(n.x, n.y, G.px, G.py) > 120); // чистим место
+const stBefore = G.structures.length;
+elements["game"].__fire("mousedown", { button: 0 });
+check("костёр поставлен", G.structures.length === stBefore + 1);
+check("костёр списан из инвентаря", (G.inv["campfire"] || 0) === 0);
+check("режим постройки снят", G.placing === null);
+
+console.log("\n=== 11. Дом: укрытие от врагов ===");
+GameDebug.addItem("house", 1);
+GameDebug.itemClick("house");
+G.camX = G.px; G.camY = G.py;
+G.mouse.x = 740; G.mouse.y = 360;   // дом на 100 правее игрока
+const st2 = G.structures.length;
+elements["game"].__fire("mousedown", { button: 0 });
+check("дом поставлен", G.structures.length === st2 + 1 && G.structures.some(s => s.type === "house"));
+check("дом списан из инвентаря", (G.inv["house"] || 0) === 0);
+// волк рядом с домом не должен атаковать (укрытие)
+GameDebug.spawnCreature("wolf", G.px + 180, G.py);
+const wolf = G.creatures[G.creatures.length - 1];
+const hpBefore = Math.round(G.hp);
+for (let i = 0; i < 40; i++) { wolf.atkCd = 0; step(1, 16); }
+check("игрок в укрытии не пострадал", Math.round(G.hp) === hpBefore, "hp=" + Math.round(G.hp));
+check("волк отпугнут от дома", dist(G.px, G.py, wolf.x, wolf.y) > 150, "d=" + Math.round(dist(G.px, G.py, wolf.x, wolf.y)));
+
+console.log("\n=== 12. Выброс и подбор предмета (ПКМ) ===");
+GameDebug.addItem("berry", 5);
+const berryBefore = G.inv["berry"];
+GameDebug.dropItem("berry", 2);
+check("предмет выброшен на землю", G.dropped.length === 1 && G.inv["berry"] === berryBefore - 2);
+step(3, 16);
+check("выброшенное подобрано обратно", G.dropped.length === 0 && G.inv["berry"] === berryBefore, "berry=" + G.inv["berry"]);
 
 console.log("\n=== ИТОГ ===");
 console.log("PASS: " + pass + "   FAIL: " + fail);

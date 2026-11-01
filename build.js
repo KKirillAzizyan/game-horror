@@ -27,34 +27,34 @@ function safeJs(js) {
 }
 
 const html = read("index.html");
-const css = read("style.css");
-const js = read("game.js");
+const css = read("css/style.css");
+const js = read("js/game.js");
 
 let out = html;
 
-/* 1. CSS: <link ... href="style.css">  →  <style>...</style> */
-const cssLink = /<link\s+rel="stylesheet"\s+href="style\.css"\s*\/?>/i;
+/* 1. CSS: <link ... href="css/style.css">  →  <style>...</style> */
+const cssLink = /<link\s+rel="stylesheet"\s+href="css\/style\.css"\s*\/?>/i;
 if (cssLink.test(out)) {
     out = out.replace(cssLink, "<style>\n" + safeCss(css) + "\n</style>");
 } else if (/<style>[\s\S]*?<\/style>/i.test(out)) {
     // уже есть style-блок (повторная сборка) — заменяем содержимое
     out = out.replace(/<style>[\s\S]*?<\/style>/i, "<style>\n" + safeCss(css) + "\n</style>");
 } else {
-    throw new Error("Не найден link на style.css для инлайна");
+    throw new Error("Не найден link на css/style.css для инлайна");
 }
 
-/* 2. JS: <script src="game.js"></script>  →  <script>...</script> */
-const jsTag = /<script\s+src="game\.js"\s*><\/script>/i;
+/* 2. JS: <script src="js/game.js"></script>  →  <script>...</script> */
+const jsTag = /<script\s+src="js\/game\.js"\s*><\/script>/i;
 if (jsTag.test(out)) {
     out = out.replace(jsTag, "<script>\n" + safeJs(js) + "\n</script>");
 } else if (/<script>[\s\S]*?<\/script>/i.test(out)) {
     out = out.replace(/<script>[\s\S]*?<\/script>/i, "<script>\n" + safeJs(js) + "\n</script>");
 } else {
-    throw new Error("Не найден script src=game.js для инлайна");
+    throw new Error("Не найден script src=js/game.js для инлайна");
 }
 
 /* 3. Проверка: не осталось ли внешних ссылок на наши файлы */
-const leaked = out.match(/(?:href|src)="(?:style\.css|game\.js)"/i);
+const leaked = out.match(/(?:href|src)="(?:css\/style\.css|js\/game\.js)"/i);
 if (leaked) throw new Error("В сборке остались внешние ссылки: " + leaked[0]);
 
 /* Запись */
