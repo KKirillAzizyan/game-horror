@@ -35,6 +35,10 @@
         <div id="clock-phase">Утро</div>
     </div>
 
+    <!-- Цель игры и статус укрытия -->
+    <div id="hud-objective"></div>
+    <div id="hud-buff" class="hidden"></div>
+
     <!-- Низ: инвентарь -->
     <div id="hud-inventory">
         <div id="inv-slots"></div>
@@ -65,7 +69,15 @@
             <div>Постройки: создай в крафте, кликни в инвентаре, <b>ЛКМ</b> — поставить</div>
             <div><b>ПКМ по предмету</b> — выбросить · <b>Esc / P</b> — пауза</div>
         </div>
+        <button id="btn-continue" class="hidden">ПРОДОЛЖИТЬ СОХРАНЁННОЕ</button>
         <button id="btn-start">НАЧАТЬ ВЫЖИВАНИЕ</button>
+    </div>
+
+    <!-- Экран победы -->
+    <div id="win-screen" class="hidden">
+        <h1>ПОБЕДА!</h1>
+        <p id="win-stats">Ты выжил и построил Маяк спасения!</p>
+        <button id="btn-win-restart">ИГРАТЬ СНОВА</button>
     </div>
 
     <!-- Экран смерти -->

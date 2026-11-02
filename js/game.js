@@ -33,7 +33,7 @@ const CFG = {
    --------------------------------------------------------------------- */
 const ITEMS = {
     twig:      { name: "Ветки",       icon: "🌿", cat: "res" },
-    flint:     { name: "Кремень",     icon: "🪨", cat: "res" },
+    flint:     { name: "Кремень",     icon: "🔹", cat: "res" },
     grass:     { name: "Трава",       icon: "🌾", cat: "res" },
     log:       { name: "Брёвна",      icon: "🪵", cat: "res" },
     rock:      { name: "Камни",       icon: "🪨", cat: "res" },
@@ -51,6 +51,7 @@ const ITEMS = {
     house:     { name: "Дом",         icon: "🏠", cat: "build" },
     wall:      { name: "Каменная стена", icon: "🧱", cat: "build" },
     flag:      { name: "Флажок",      icon: "🚩", cat: "build" },
+    beacon:    { name: "Маяк спасения", icon: "🗼", cat: "build", goal: true },
 };
 
 /* Мета-данные построек (радиус, твёрдость, свет, эффекты) */
@@ -59,6 +60,16 @@ const STRUCTURES = {
     house:    { name: "Дом",    r: 46, solid: true,  light: 175, shelter: true },
     wall:     { name: "Стена",  r: 22, solid: true },
     flag:     { name: "Флажок", r: 14, solid: false, beacon: true },
+    beacon:   { name: "Маяк спасения", r: 42, solid: true, light: 240, win: true },
+};
+
+/* Подсказки — для чего каждая постройка */
+const STRUCT_HINT = {
+    campfire: "Свет ночью · ЛКМ — приготовить мясо · +рассудок рядом",
+    house: "Укрытие: враги не атакуют рядом · +HP и рассудок ночью",
+    wall: "Блокирует тварей — обнеси лагерь стенами",
+    flag: "Метка-маяк, видна на миникарте — не потеряешь базу",
+    beacon: "⭐ ЦЕЛЬ ИГРЫ! Победа — переживи4 дня и собери ресурсы",
 };
 
 const RECIPES = [
@@ -71,6 +82,7 @@ const RECIPES = [
     { out: "house",    cost: { log: 6, rock: 8, grass: 4 } },
     { out: "wall",     cost: { rock: 4 } },
     { out: "flag",     cost: { twig: 3, grass: 2 } },
+    { out: "beacon",   cost: { gem: 4, log: 12, rock: 12, flint: 6, cookedMeat: 4 }, goal: true },
 ];
 
 /* ---------------------------------------------------------------------
@@ -106,6 +118,11 @@ const CREATURE_TYPES = {
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
+/* Отдельный слой для ночного затемнения: «дырки света» вырезаются только
+   в нём, поэтому освещённая область показывает ЯРКУЮ сцену, а не прозрачность. */
+const nightLayer = document.createElement("canvas");
+const nctx = nightLayer.getContext("2d");
+
 let W = 0, H = 0;
 
 const G = {
@@ -128,6 +145,8 @@ const G = {
     structures: [],   // постройки
     dropped: [],      // выброшенные на землю предметы (помечены на миникарте)
     placing: null,    // id предмета в режиме постройки (null = не строим)
+    won: false,       // построен маяк — победа
+    saveTimer: 20,    // таймер автосохранения
     particles: [],    // всплывающие цифры/эффекты
     floaters: [],
     camX: 0, camY: 0,
@@ -163,6 +182,7 @@ function addItem(id, qty) {
     qty = qty || 1;
     G.inv[id] = Math.min(CFG.stackMax, (G.inv[id] || 0) + qty);
     renderInventory();
+    refreshCraftIfOpen();
 }
 function removeItem(id, qty) {
     qty = qty || 1;
@@ -173,7 +193,13 @@ function removeItem(id, qty) {
         if (G.equipped === id) G.equipped = null;
     }
     renderInventory();
+    refreshCraftIfOpen();
     return true;
+}
+/* Панель крафта обновляется автоматически при любом изменении инвентаря */
+function refreshCraftIfOpen() {
+    const p = document.getElementById("craft-panel");
+    if (p && !p.classList.contains("hidden")) renderCraft();
 }
 function countItem(id) { return G.inv[id] || 0; }
 function hasCost(cost) {
@@ -477,7 +503,8 @@ function updateCreatures(dt) {
                 if (d > c.r + 34) {
                     mvx = dx / d; mvy = dy / d;
                 } else if (c.atkCd <= 0) {
-                    damagePlayer(def.dmg, def.boss ? "Вас убил " + def.name : "Вас растерзали звери");
+                    const dmg = Math.round(def.dmg * difficulty());
+                    damagePlayer(dmg, def.boss ? "Вас убил " + def.name : "Вас растерзали звери");
                     c.atkCd = def.boss ? 1.5 : 1.1;
                 }
             } else if (sheltered && d < 360) {
@@ -529,32 +556,35 @@ function updateCreatures(dt) {
 /* ---------------------------------------------------------------------
    17. СПАВН ПО ВРЕМЕНИ
    --------------------------------------------------------------------- */
+/* Сложность растёт с каждым днём: больше и злее врагов */
+function difficulty() { return 1 + (G.day - 1) * 0.18; }
+
 function updateSpawns(dt) {
     const night = phaseInfo().night;
+    const diff = difficulty();
 
     // пассивные животные днём
     G.spawnTimer -= dt;
     if (G.spawnTimer <= 0) {
         G.spawnTimer = 4.5;
         const wild = G.creatures.filter(c => !CREATURE_TYPES[c.type].boss).length;
-        if (wild < 16) spawnWildlife();
+        if (wild < 16 + G.day * 2) spawnWildlife();
     }
 
-    // враги ночью
+    // враги ночью (чем дальше — тем больше и чаще)
     if (night) {
-        G.spawnTimer -= dt * 0; // (таймер общий)
-        if (Math.random() < dt * 0.5) {
+        if (Math.random() < dt * 0.5 * diff) {
             const enemies = G.creatures.filter(c => !CREATURE_TYPES[c.type].passive).length;
-            if (enemies < 8) spawnNightEnemy();
+            if (enemies < Math.round(8 * diff)) spawnNightEnemy();
         }
     }
 
-    // боссы каждые 2 дня ночью + шанс на рассвете
+    // боссы: с каждым днём чаще (нужны кристаллы для маяка)
     G.bossTimer -= dt;
     if (G.day >= 2 && G.bossTimer <= 0) {
-        if (night && Math.random() < dt * 0.25) {
+        if (night && Math.random() < dt * (0.28 + (G.day - 2) * 0.07)) {
             spawnBoss();
-            G.bossTimer = 55;
+            G.bossTimer = Math.max(30, 55 - G.day * 3);
         }
     }
 
@@ -746,6 +776,7 @@ function togglePause() {
     const el = document.getElementById("pause-screen");
     if (G.paused) {
         G.keys = {};                      // сбрасываем зажатые клавиши
+        saveGame();                       // сохраняемся при паузе
         el.classList.remove("hidden");
         document.getElementById("pause-day").textContent =
             "День " + G.day + " · HP " + Math.ceil(G.hp) + " · Голод " + Math.ceil(G.hunger);
@@ -801,6 +832,7 @@ function cursorWorld() {
 function canPlace(wx, wy, id) {
     const def = STRUCTURES[id];
     if (!def) return [false, "Неизвестная постройка"];
+    if (id === "beacon" && G.day < 4) return [false, "Маяк ставится с 4 дня — переживи ночи и добудь кристаллы"];
     const r = def.r;
     if (wx < r + 12 || wy < r + 12 || wx > CFG.worldW - r - 12 || wy > CFG.worldH - r - 12)
         return [false, "Слишком близко к краю мира"];
@@ -817,7 +849,7 @@ function canPlace(wx, wy, id) {
     return [true, ""];
 }
 function placeStructure(type, x, y) {
-    const hp = type === "house" ? 60 : type === "wall" ? 45 : type === "campfire" ? 30 : 15;
+    const hp = type === "house" ? 60 : type === "wall" ? 45 : type === "campfire" ? 30 : type === "beacon" ? 80 : 15;
     G.structures.push({ type, x, y, born: G.time, hp, maxHp: hp });
 }
 function tryPlace() {
@@ -831,6 +863,7 @@ function tryPlace() {
     toast("Построено: " + ITEMS[id].icon + " " + ITEMS[id].name, "#2ecc71");
     for (let i = 0; i < 12; i++)
         G.particles.push({ x: wx, y: wy, vx: rnd(-70, 70), vy: rnd(-70, 70), t: 0, life: 0.5, col: "#c9a24a" });
+    if (id === "beacon") { G.placing = null; renderInventory(); winGame(); return; }
     if (countItem(id) <= 0) G.placing = null;   // предмет кончился — выходим из режима
     renderInventory();
 }
@@ -838,17 +871,26 @@ function cancelPlacing() {
     if (G.placing) { G.placing = null; renderInventory(); toast("Постройка отменена", "#aaa"); }
 }
 
-/* Выброс предмета на землю (ПКМ по слоту) — предмет помечается на миникарте */
+/* Выброс предмета на землю (ПКМ по слоту) — предмет помечается на миникарте.
+   Бросаем перед игроком (видно на земле), с задержкой — чтобы не подбирался мгновенно. */
 function dropItem(id, qty) {
     qty = qty || 1;
     if (!removeItem(id, qty)) return;
-    G.dropped.push({ id, qty, x: G.px + rnd(-26, 26), y: G.py + rnd(-26, 26), t: 0 });
-    toast("Выброшено: " + ITEMS[id].icon + " ×" + qty, "#aaa");
+    const ang = G.facing + rnd(-0.6, 0.6);
+    const dd = rnd(62, 84);
+    G.dropped.push({
+        id, qty,
+        x: clamp(G.px + Math.cos(ang) * dd, 30, CFG.worldW - 30),
+        y: clamp(G.py + Math.sin(ang) * dd, 30, CFG.worldH - 30),
+        t: 0, delay: 0.7,
+    });
+    toast("Выброшено: " + ITEMS[id].icon + " ×" + qty + " — подойди, чтобы подобрать", "#aaa");
 }
 function updateDropped(dt) {
     for (const d of G.dropped) {
         d.t += dt;
-        if (dist(G.px, G.py, d.x, d.y) < 42) {   // подбираем, наступив
+        if (d.delay > 0) { d.delay -= dt; continue; }   // короткая задержка, чтобы не «липло» обратно
+        if (dist(G.px, G.py, d.x, d.y) < 44) {   // подбираем, наступив
             addItem(d.id, d.qty);
             floater(d.x, d.y - 14, "+" + d.qty + " " + ITEMS[d.id].name, "#2ecc71");
             d.done = true;
@@ -889,14 +931,19 @@ function renderCraft() {
         const it = ITEMS[r.out];
         const can = hasCost(r.cost);
         const row = document.createElement("div");
-        row.className = "recipe" + (can ? " can" : "");
+        row.className = "recipe" + (can ? " can" : "") + (r.goal ? " goal" : "");
         const costHtml = Object.keys(r.cost).map(k => {
-            const ok = countItem(k) >= r.cost[k];
-            return `<span class="${ok ? "ok" : "no"}">${ITEMS[k].icon}${countItem(k)}/${r.cost[k]}</span>`;
-        }).join(" ");
+            const have = countItem(k), need = r.cost[k];
+            const ok = have >= need;
+            return `<span class="cost ${ok ? "ok" : "no"}" title="${ITEMS[k].name}">` +
+                   `<span class="cost-ico">${ITEMS[k].icon}</span>` +
+                   `<span class="cost-name">${ITEMS[k].name}</span>` +
+                   `<span class="cost-num">${have}/${need}</span></span>`;
+        }).join("");
+        const goalTag = r.goal ? `<div class="goal-tag">⭐ ЦЕЛЬ — выигрыш</div>` : "";
         row.innerHTML =
             `<div class="recipe-ico">${it.icon}</div>` +
-            `<div class="recipe-info"><div class="recipe-name">${it.name}</div>` +
+            `<div class="recipe-info"><div class="recipe-name">${it.name}</div>${goalTag}` +
             `<div class="recipe-cost">${costHtml}</div></div>` +
             `<button class="recipe-btn" ${can ? "" : "disabled"}>Создать</button>`;
         row.querySelector("button").addEventListener("click", () => craft(r));
@@ -942,12 +989,24 @@ function updateTooltip() {
             sub = (def.tool ? (def.tool === "axe" ? "Нужен топор" : "Нужна кирка") : "ЛКМ — собрать") +
                   (nBest.hp < nBest.maxHp ? ` · Прочность ${nBest.hp}/${nBest.maxHp}` : "");
         } else {
-            // рядом с костром?
+            // постройка под курсором — показываем назначение
             for (const s of G.structures) {
-                if (s.type === "campfire" && dist(G.px, G.py, s.x, s.y) < CFG.gatherRange + 30) {
-                    title = "Костёр";
-                    sub = countItem("meat") > 0 ? "ЛКМ — приготовить мясо" : "Даёт свет и рассудок ночью";
+                const sd = STRUCTURES[s.type];
+                if (dist(wx, wy, s.x, s.y) < sd.r + 18) {
+                    title = ITEMS[s.type].icon + " " + sd.name;
+                    sub = STRUCT_HINT[s.type] || "";
+                    if (s.type === "campfire" && countItem("meat") > 0) sub = "ЛКМ — приготовить мясо · " + sub;
                     break;
+                }
+            }
+            // стоим рядом с костром — подсказка о готовке
+            if (!title) {
+                for (const s of G.structures) {
+                    if (s.type === "campfire" && dist(G.px, G.py, s.x, s.y) < CFG.gatherRange + 30) {
+                        title = "🔥 Костёр";
+                        sub = countItem("meat") > 0 ? "ЛКМ — приготовить мясо" : "Даёт свет и рассудок ночью";
+                        break;
+                    }
                 }
             }
         }
@@ -1071,16 +1130,7 @@ function draw() {
     drawAim(aimWx, aimWy);
 
     // ---- затемнение ночи ----
-    if (night > 0.01) {
-        ctx.fillStyle = `rgba(6, 6, 20, ${night * 0.78})`;
-        ctx.fillRect(0, 0, W, H);
-        // дырка света от игрока/факела/костра
-        drawLightHole(G.px, G.py, equippedLightRadius(), night);
-        for (const s of G.structures) {
-            if (s.type === "campfire") drawLightHole(s.x, s.y, 260, night);
-            else if (s.type === "house") drawLightHole(s.x, s.y, 175, night);
-        }
-    }
+    if (night > 0.01) drawNight(night);
 
     // ---- виньетка ----
     const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
@@ -1176,6 +1226,21 @@ function drawStructure(s, sx, sy) {
         ctx.fillStyle = "#f1c40f";
         ctx.beginPath(); ctx.arc(sx, sy - 30, 6, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
+    } else if (s.type === "beacon") {
+        // маяк спасения — высокая башня со светом (цель игры)
+        ctx.fillStyle = "#2c3e50";
+        ctx.fillRect(sx - 15, sy - 72, 30, 76);
+        ctx.fillStyle = "#34495e";
+        ctx.fillRect(sx - 20, sy - 12, 40, 16);
+        ctx.fillStyle = "#e74c3c";
+        ctx.fillRect(sx - 15, sy - 56, 30, 13);
+        ctx.fillRect(sx - 15, sy - 32, 30, 13);
+        // верхушка-свет (пульсирует)
+        const pulse = 0.6 + Math.sin(G.time * 5) * 0.4;
+        ctx.fillStyle = `rgba(241, 196, 15, ${pulse})`;
+        ctx.beginPath(); ctx.arc(sx, sy - 76, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(sx, sy - 76, 5, 0, Math.PI * 2); ctx.fill();
     }
 }
 
@@ -1283,34 +1348,54 @@ function drawMinimap() {
     ctx.textAlign = "left";
     ctx.fillText("Карта", mx + 6, my - 4);
 }
-function drawLightHole(wx, wy, radius, night) {
+/* Ночное затемнение: тьма на отдельном слое, света вырезаются в нём.
+   Освещённые круги показывают яркую сцену (а не прозрачность/«пятно»). */
+function drawNight(night) {
+    if (nightLayer.width !== W || nightLayer.height !== H) { nightLayer.width = W; nightLayer.height = H; }
+    nctx.clearRect(0, 0, W, H);
+    nctx.fillStyle = `rgba(6, 7, 24, ${night * 0.86})`;
+    nctx.fillRect(0, 0, W, H);
+
+    // вырезаем света (только на слое темноты)
+    nctx.save();
+    nctx.globalCompositeOperation = "destination-out";
+    punchLight(nctx, G.px, G.py, equippedLightRadius(), night);
+    for (const s of G.structures) {
+        const sd = STRUCTURES[s.type];
+        if (sd && sd.light) punchLight(nctx, s.x, s.y, sd.light, night);
+    }
+    nctx.restore();
+
+    // накладываем темноту — светлые круги = видимая яркая сцена
+    ctx.drawImage(nightLayer, 0, 0);
+
+    // лёгкий тёплый отсвет у светил (атмосфера, не грязное пятно)
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    warmGlow(G.px, G.py, equippedLightRadius() * 0.7, night * 0.10);
+    for (const s of G.structures) {
+        const sd = STRUCTURES[s.type];
+        if (sd && sd.light) warmGlow(s.x, s.y, sd.light * 0.7, night * 0.13);
+    }
+    ctx.restore();
+}
+function punchLight(c, wx, wy, radius, night) {
     const [sx, sy] = worldToScreen(wx, wy);
-    const grd = ctx.createRadialGradient(sx, sy, radius * 0.15, sx, sy, radius);
-    grd.addColorStop(0, `rgba(0,0,0,${night * 0.78})`);
-    grd.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    // вырезаем darkness: рисуем прозрачный градиент поверх (свет)
-    ctx.globalCompositeOperation = "destination-out";
-    const g2 = ctx.createRadialGradient(sx, sy, radius * 0.2, sx, sy, radius);
-    g2.addColorStop(0, `rgba(0,0,0,${night * 0.9})`);
-    g2.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = g2;
-    ctx.beginPath();
-    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    // тёплый отсвет
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    const warm = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-    warm.addColorStop(0, `rgba(255,170,60,${night * 0.14})`);
-    warm.addColorStop(1, "rgba(255,170,60,0)");
-    ctx.fillStyle = warm;
-    ctx.beginPath();
-    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    const g = c.createRadialGradient(sx, sy, radius * 0.06, sx, sy, radius);
+    g.addColorStop(0, `rgba(0,0,0,${night})`);
+    g.addColorStop(0.5, `rgba(0,0,0,${night * 0.82})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = g;
+    c.beginPath(); c.arc(sx, sy, radius, 0, Math.PI * 2); c.fill();
+}
+function warmGlow(wx, wy, radius, alpha) {
+    if (alpha <= 0.005 || radius <= 1) return;
+    const [sx, sy] = worldToScreen(wx, wy);
+    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+    g.addColorStop(0, `rgba(255,192,120,${alpha})`);
+    g.addColorStop(1, "rgba(255,170,80,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(sx, sy, radius, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawAim(wx, wy) {
@@ -1676,6 +1761,32 @@ function renderHud() {
     document.getElementById("clock-ico").textContent = ico;
     document.getElementById("clock-day").textContent = "День " + G.day;
     document.getElementById("clock-phase").textContent = phase;
+
+    // индикатор укрытия (рядом с домом)
+    const buffEl = document.getElementById("hud-buff");
+    let sheltered = false;
+    for (const s of G.structures) {
+        if (s.type === "house" && dist(G.px, G.py, s.x, s.y) < CFG.safeRadius) { sheltered = true; break; }
+    }
+    if (sheltered) {
+        buffEl.classList.remove("hidden");
+        buffEl.textContent = "🏠 В укрытии — враги не атакуют, +HP и рассудок";
+    } else {
+        buffEl.classList.add("hidden");
+    }
+
+    // цель: построить Маяк спасения
+    const objEl = document.getElementById("hud-objective");
+    const br = RECIPES.find(r => r.out === "beacon");
+    const dayOk = G.day >= 4;
+    const matsOk = hasCost(br.cost);
+    const gems = countItem("gem");
+    const ready = dayOk && matsOk;
+    objEl.className = ready ? "obj-ready" : "";
+    objEl.innerHTML = "🎯 Цель: <b>🗼 Маяк</b> — " +
+        `<span class="${dayOk ? "ok" : "no"}">День ${G.day}/4</span> · ` +
+        `<span class="${gems >= br.cost.gem ? "ok" : "no"}">💎 ${gems}/${br.cost.gem}</span> · ` +
+        `<span class="${matsOk ? "ok" : "no"}">${matsOk ? "материалы есть — строй!" : "нужны ресурсы (C — крафт)"}</span>`;
 }
 
 /* ---------------------------------------------------------------------
@@ -1685,6 +1796,7 @@ function die(reason) {
     if (!G.running) return;
     G.running = false;
     G.deathReason = reason;
+    clearSave();   // смерть — начинаем заново
     document.getElementById("death-reason").textContent = reason;
     document.getElementById("death-stats").textContent =
         "Продержались: " + G.day + " " + plural(G.day, "день", "дня", "дней") +
@@ -1696,6 +1808,91 @@ function plural(n, one, few, many) {
     if (m10 === 1 && m100 !== 11) return one;
     if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
     return many;
+}
+
+/* ---------------------------------------------------------------------
+   25b. ПОБЕДА (построен Маяк спасения)
+   --------------------------------------------------------------------- */
+function winGame() {
+    if (!G.running) return;
+    G.running = false;
+    G.won = true;
+    clearSave();
+    document.getElementById("win-stats").textContent =
+        "Ты выжил " + G.day + " " + plural(G.day, "день", "дня", "дней") +
+        " и построил Маяк спасения — пустоши покорены!";
+    document.getElementById("win-screen").classList.remove("hidden");
+}
+
+/* ---------------------------------------------------------------------
+   25c. СОХРАНЕНИЕ / ЗАГРУЗКА МИРА (localStorage)
+   --------------------------------------------------------------------- */
+const SAVE_KEY = "horror_save_v1";
+
+function saveGame() {
+    if (!G.running || G.won) return;
+    try {
+        const data = {
+            v: 1,
+            day: G.day, dayPhase: G.dayPhase, time: G.time,
+            hp: G.hp, maxHp: G.maxHp, hunger: G.hunger, sanity: G.sanity,
+            px: G.px, py: G.py, facing: G.facing,
+            inv: G.inv, equipped: G.equipped,
+            nodes: G.nodes.map(n => ({ type: n.type, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp })),
+            creatures: G.creatures.map(c => ({ type: c.type, x: c.x, y: c.y, hp: c.hp, wanderT: c.wanderT, wx: c.wx, wy: c.wy, anim: c.anim })),
+            structures: G.structures.map(s => ({ type: s.type, x: s.x, y: s.y, hp: s.hp, maxHp: s.maxHp })),
+            dropped: G.dropped.map(d => ({ id: d.id, qty: d.qty, x: d.x, y: d.y })),
+            spawnTimer: G.spawnTimer, bossTimer: G.bossTimer, lastHitId: G.lastHitId,
+        };
+        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    } catch (e) { /* localStorage может быть недоступен */ }
+}
+function loadGame() {
+    try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return false;
+        const d = JSON.parse(raw);
+        if (!d || d.v !== 1) return false;
+
+        G.running = true; G.paused = false; G.won = false;
+        G.keys = {};
+        document.getElementById("pause-screen").classList.add("hidden");
+        document.getElementById("death-screen").classList.add("hidden");
+        document.getElementById("win-screen").classList.add("hidden");
+
+        G.day = d.day; G.dayPhase = d.dayPhase; G.time = d.time;
+        G.hp = d.hp; G.maxHp = d.maxHp; G.hunger = d.hunger; G.sanity = d.sanity;
+        G.px = d.px; G.py = d.py; G.facing = d.facing || 0;
+        G.camX = G.px; G.camY = G.py;
+        G.inv = d.inv || {}; G.equipped = d.equipped || null;
+        G.lastHitId = d.lastHitId || 0;
+
+        G.nodes = (d.nodes || []).map(n => {
+            const t = NODE_TYPES[n.type];
+            if (!t) return null;
+            return { id: ++G.lastHitId, type: n.type, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp, r: t.r, wobble: rnd(0, Math.PI * 2), shake: 0 };
+        }).filter(Boolean);
+        G.creatures = (d.creatures || []).map(c => {
+            const t = CREATURE_TYPES[c.type];
+            if (!t) return null;
+            return { id: ++G.lastHitId, type: c.type, x: c.x, y: c.y, hp: c.hp, maxHp: t.hp, r: t.r, vx: 0, vy: 0, wanderT: c.wanderT || rnd(0,2), wx: c.wx || c.x, wy: c.wy || c.y, atkCd: 0, hitFlash: 0, anim: c.anim || 0, boss: !!t.boss };
+        }).filter(Boolean);
+        G.structures = (d.structures || []).map(s => (STRUCTURES[s.type] ? { type: s.type, x: s.x, y: s.y, born: G.time, hp: s.hp, maxHp: s.maxHp } : null)).filter(Boolean);
+        G.dropped = (d.dropped || []).map(x => ({ id: x.id, qty: x.qty, x: x.x, y: x.y, t: 0, delay: 0.7 }));
+        G.particles = []; G.floaters = [];
+        G.spawnTimer = d.spawnTimer || 1; G.bossTimer = d.bossTimer || 0;
+        G.dashT = 0; G.dashCd = 0; G.gatherCd = 0; G.placing = null;
+        G.hurtFlash = 0; G.shake = 0; G.saveTimer = 20;
+
+        renderInventory();
+        return true;
+    } catch (e) { return false; }
+}
+function hasSave() {
+    try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+}
+function clearSave() {
+    try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
 }
 
 /* ---------------------------------------------------------------------
@@ -1719,6 +1916,10 @@ function loop(now) {
     updateSpawns(dt);
     respawnNodes(dt);
     updateDropped(dt);
+
+    // автосохранение каждые 20 секунд
+    G.saveTimer -= dt;
+    if (G.saveTimer <= 0) { G.saveTimer = 20; saveGame(); }
 
     // частицы
     for (const p of G.particles) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 200 * dt; }
@@ -1750,8 +1951,12 @@ function loop(now) {
 function startGame() {
     G.running = true;
     G.paused = false;
+    G.won = false;
+    G.saveTimer = 20;
     G.keys = {};
+    clearSave();   // новая игра — старое сохранение стираем
     document.getElementById("pause-screen").classList.add("hidden");
+    document.getElementById("win-screen").classList.add("hidden");
     G.time = 0; G.day = 1; G.dayPhase = 0.05;
     G.hp = G.maxHp = 100; G.hunger = 100; G.sanity = 100;
     G.px = CFG.worldW / 2; G.py = CFG.worldH / 2;
@@ -1779,8 +1984,17 @@ document.getElementById("btn-start").addEventListener("click", () => {
     document.getElementById("btn-craft-toggle").classList.remove("hidden");
     startGame();
 });
+document.getElementById("btn-continue").addEventListener("click", () => {
+    document.getElementById("start-screen").classList.add("hidden");
+    document.getElementById("btn-craft-toggle").classList.remove("hidden");
+    if (!loadGame()) startGame();   // если сохранение битое — новая игра
+});
 document.getElementById("btn-restart").addEventListener("click", () => {
     document.getElementById("death-screen").classList.add("hidden");
+    startGame();
+});
+document.getElementById("btn-win-restart").addEventListener("click", () => {
+    document.getElementById("win-screen").classList.add("hidden");
     startGame();
 });
 document.getElementById("btn-resume").addEventListener("click", togglePause);
@@ -1791,5 +2005,10 @@ setupInput();
 renderInventory();
 requestAnimationFrame(loop);
 
+// есть сохранение — показываем кнопку «Продолжить»
+if (hasSave()) document.getElementById("btn-continue").classList.remove("hidden");
+// сохраняемся при закрытии вкладки
+window.addEventListener("beforeunload", () => { if (G.running && !G.won) saveGame(); });
+
 /* Отладочный хук */
-window.GameDebug = { G, CFG, ITEMS, RECIPES, STRUCTURES, startGame, spawnBoss, spawnCreature, addItem, NODE_TYPES, CREATURE_TYPES, itemClick, dropItem, tryPlace, canPlace, cancelPlacing };
+window.GameDebug = { G, CFG, ITEMS, RECIPES, STRUCTURES, startGame, spawnBoss, spawnCreature, addItem, NODE_TYPES, CREATURE_TYPES, itemClick, dropItem, tryPlace, canPlace, cancelPlacing, saveGame, loadGame, hasSave, clearSave, winGame, difficulty };

@@ -93,6 +93,16 @@ global.requestAnimationFrame = cb => { rafCb = cb; return 1; };
 let fakeNow = 1000;
 global.performance = { now: () => fakeNow };
 
+/* --- localStorage (нужен для сохранения мира) --- */
+const __store = {};
+global.localStorage = {
+    getItem: k => (Object.prototype.hasOwnProperty.call(__store, k) ? __store[k] : null),
+    setItem: (k, v) => { __store[k] = String(v); },
+    removeItem: k => { delete __store[k]; },
+    clear: () => { for (const k in __store) delete __store[k]; },
+};
+global.window.localStorage = global.localStorage;
+
 /* --- загрузка game.js --- */
 const code = fs.readFileSync(__dirname + "/js/game.js", "utf8");
 vm.runInThisContext(code, { filename: "game.js" });
@@ -169,9 +179,10 @@ check("движение возобновилось", G.py - y2 < -20, "dy=" + (G
 fireWindow("keyup", { code: "KeyW", key: "ц" });
 
 console.log("\n=== 6. Сбор ресурса (ЛКМ) ===");
-const invBefore = Object.keys(G.inv).length;
-// поставить куст ягод рядом и ткнуть
-GameDebug.G.nodes.push({ id: 9999999, type: "berryBush", x: G.px + 30, y: G.py, hp: 1, maxHp: 1, r: 20, wobble: 0, shake: 0 });
+// изолируем место: убираем существ и чужие узлы рядом, чтобы сбор шёл именно в куст
+G.creatures = G.creatures.filter(c => dist(c.x, c.y, G.px, G.py) > 90);
+G.nodes = G.nodes.filter(n => dist(n.x, n.y, G.px, G.py) > 75);
+G.nodes.push({ id: 9999999, type: "berryBush", x: G.px + 30, y: G.py, hp: 1, maxHp: 1, r: 20, wobble: 0, shake: 0 });
 G.gatherCd = 0;
 elements["game"].__fire("mousedown", { button: 0 });
 check("ягоды собраны", (G.inv["berry"] || 0) > 0, "berry=" + G.inv["berry"]);
@@ -216,6 +227,7 @@ GameDebug.addItem("house", 1);
 GameDebug.itemClick("house");
 G.camX = G.px; G.camY = G.py;
 G.mouse.x = 740; G.mouse.y = 360;   // дом на 100 правее игрока
+G.nodes = G.nodes.filter(n => dist(n.x, n.y, G.px + 100, G.py) > 75); // чистим место под дом
 const st2 = G.structures.length;
 elements["game"].__fire("mousedown", { button: 0 });
 check("дом поставлен", G.structures.length === st2 + 1 && G.structures.some(s => s.type === "house"));
@@ -234,7 +246,63 @@ const berryBefore = G.inv["berry"];
 GameDebug.dropItem("berry", 2);
 check("предмет выброшен на землю", G.dropped.length === 1 && G.inv["berry"] === berryBefore - 2);
 step(3, 16);
-check("выброшенное подобрано обратно", G.dropped.length === 0 && G.inv["berry"] === berryBefore, "berry=" + G.inv["berry"]);
+check("не подбирается мгновенно (бросок в сторону + задержка)", G.dropped.length === 1, "dropped=" + G.dropped.length);
+// подходим к предмету и ждём, пока истечёт задержка подбора
+const drop0 = G.dropped[0];
+G.px = drop0.x; G.py = drop0.y;
+for (let i = 0; i < 70; i++) step(1, 16);   // ~1.1с > задержки 0.7с
+check("подобрано после подхода", G.dropped.length === 0 && G.inv["berry"] === berryBefore, "berry=" + G.inv["berry"]);
+
+console.log("\n=== 13. Сохранение и загрузка мира ===");
+GameDebug.clearSave();
+check("сохранения по умолчанию нет", GameDebug.hasSave() === false);
+G.day = 7; G.px = 1234; G.py = 5678; G.hp = 63; G.hunger = 41;
+GameDebug.addItem("gem", 3);
+G.structures.push({ type: "house", x: 300, y: 300, born: 0, hp: 60, maxHp: 60 });
+GameDebug.saveGame();
+check("сохранение создалось", GameDebug.hasSave() === true);
+// портим состояние
+G.day = 1; G.px = 0; G.py = 0; G.hp = 100; delete G.inv["gem"];
+G.structures = G.structures.filter(s => !(s.type === "house" && s.x === 300));
+const loaded = GameDebug.loadGame();
+check("загрузка удалась", loaded === true);
+check("день восстановился", G.day === 7, "day=" + G.day);
+check("позиция восстановилась", G.px === 1234 && G.py === 5678, "px=" + G.px + " py=" + G.py);
+check("HP/голод восстановились", Math.round(G.hp) === 63 && Math.round(G.hunger) === 41, "hp=" + Math.round(G.hp));
+check("инвентарь восстановился", G.inv["gem"] === 3, "gem=" + G.inv["gem"]);
+check("постройка восстановилась", G.structures.some(s => s.type === "house" && s.x === 300));
+GameDebug.clearSave();
+
+console.log("\n=== 14. Панель крафта обновляется сама ===");
+elements["craft-panel"].__classes.delete("hidden");     // «открываем» панель
+elements["craft-list"].innerHTML = "SENTINEL";
+GameDebug.addItem("log", 1);
+check("открытая панель перерисована при добавлении", elements["craft-list"].innerHTML === "", "html=" + elements["craft-list"].innerHTML);
+elements["craft-panel"].__classes.add("hidden");         // «закрываем» панель
+elements["craft-list"].innerHTML = "SENTINEL2";
+GameDebug.addItem("log", 1);
+check("закрытая панель не трогается", elements["craft-list"].innerHTML === "SENTINEL2", "html=" + elements["craft-list"].innerHTML);
+
+console.log("\n=== 15. Цель: Маяк спасения (победа) ===");
+GameDebug.clearSave();
+G.placing = null;
+GameDebug.addItem("beacon", 1);
+GameDebug.itemClick("beacon");
+check("режим постройки маяка включён", G.placing === "beacon");
+G.camX = G.px; G.camY = G.py; G.mouse.x = 640; G.mouse.y = 360;
+G.nodes = G.nodes.filter(n => dist(n.x, n.y, G.px, G.py) > 160);
+G.creatures = G.creatures.filter(c => dist(c.x, c.y, G.px, G.py) > 160);
+G.structures = G.structures.filter(s => dist(s.x, s.y, G.px, G.py) > 160);
+G.day = 1;
+const [okEarly, whyEarly] = GameDebug.canPlace(G.px, G.py, "beacon");
+check("до 4 дня маяк ставить нельзя", okEarly === false && G.day < 4, whyEarly);
+G.day = 4;
+const [okLate] = GameDebug.canPlace(G.px, G.py, "beacon");
+check("с 4 дня можно ставить", okLate === true, "ok=" + okLate);
+elements["win-screen"].__classes.add("hidden");          // экран изначально скрыт
+elements["game"].__fire("mousedown", { button: 0 });
+check("маяк поставлен → победа", G.won === true && G.running === false, "won=" + G.won);
+check("экран победы открыт", elements["win-screen"].__classes.has("hidden") === false);
 
 console.log("\n=== ИТОГ ===");
 console.log("PASS: " + pass + "   FAIL: " + fail);
