@@ -26,6 +26,13 @@ const CFG = {
     placeRange: 280,           // дальность постройки от игрока
     safeRadius: 215,           // радиус защиты дома (отпугивает тварей)
     miniSize: 170,             // размер миникарты
+    // бег (спринт) — ограничен стаминой: бежишь ~5 сек, потом восстанавливается
+    sprintDrain: 100 / 5,      // стамина иссякает за ~5 секунд бега
+    sprintRegen: 100 / 4,      // полностью восстанавливается за ~4 секунды
+    // броня
+    armorMinPass: 0.15,        // сквозь броню всегда проходит минимум 15% урона
+    // пещера
+    caveW: 3400, caveH: 3400,  // размер карты пещеры
 };
 
 /* ---------------------------------------------------------------------
@@ -42,11 +49,24 @@ const ITEMS = {
     cookedMeat:{ name: "Жареное мясо",icon: "🍖", cat: "food", food: 48, hp: 6 },
     mushroom:  { name: "Гриб",        icon: "🍄", cat: "food", food: 12, san: -6 },
     gem:       { name: "Кристалл",    icon: "💎", cat: "res" },
+    iron:      { name: "Железо",      icon: "⚙️", cat: "res" },
+    diamond:   { name: "Алмаз",       icon: "🔷", cat: "res" },
     bandage:   { name: "Повязка",     icon: "🩹", cat: "use", heal: 35 },
     axe:       { name: "Топор",       icon: "🪓", cat: "tool", dmg: 14, onTree: true },
     pickaxe:   { name: "Кирка",       icon: "⛏️", cat: "tool", dmg: 10, onRock: true },
     spear:     { name: "Копьё",       icon: "🗡️", cat: "tool", dmg: 26 },
     torch:     { name: "Факел",       icon: "🕯️", cat: "tool", dmg: 6, light: 150 },
+    /* БРОНЯ: 3 слота (шлем/нагрудник/поножи) × 3 материала.
+       armor — сколько очков защиты, dur — прочность (ломается при уроне) */
+    helmet_wood:    { name: "Деревянный шлем",     icon: "🪖", cat: "armor", slot: "head", tier: "wood",    armor: 3,  dur: 70 },
+    chest_wood:     { name: "Деревянный нагрудник", icon: "🦺", cat: "armor", slot: "body", tier: "wood",    armor: 4,  dur: 70 },
+    legs_wood:      { name: "Деревянные поножи",    icon: "👖", cat: "armor", slot: "legs", tier: "wood",    armor: 3,  dur: 70 },
+    helmet_iron:    { name: "Железный шлем",        icon: "🪖", cat: "armor", slot: "head", tier: "iron",    armor: 6,  dur: 140 },
+    chest_iron:     { name: "Железный нагрудник",   icon: "🦺", cat: "armor", slot: "body", tier: "iron",    armor: 8,  dur: 140 },
+    legs_iron:      { name: "Железные поножи",      icon: "👖", cat: "armor", slot: "legs", tier: "iron",    armor: 6,  dur: 140 },
+    helmet_diamond: { name: "Алмазный шлем",        icon: "🪖", cat: "armor", slot: "head", tier: "diamond", armor: 10, dur: 240 },
+    chest_diamond:  { name: "Алмазный нагрудник",   icon: "🦺", cat: "armor", slot: "body", tier: "diamond", armor: 13, dur: 240 },
+    legs_diamond:   { name: "Алмазные поножи",      icon: "👖", cat: "armor", slot: "legs", tier: "diamond", armor: 10, dur: 240 },
     campfire:  { name: "Костёр",      icon: "🔥", cat: "build" },
     house:     { name: "Дом",         icon: "🏠", cat: "build" },
     wall:      { name: "Каменная стена", icon: "🧱", cat: "build" },
@@ -61,6 +81,8 @@ const STRUCTURES = {
     wall:     { name: "Стена",  r: 22, solid: true },
     flag:     { name: "Флажок", r: 14, solid: false, beacon: true },
     beacon:   { name: "Маяк спасения", r: 42, solid: true, light: 240, win: true },
+    caveIn:   { name: "Вход в пещеру",  r: 40, solid: true, caveIn: true },
+    caveOut:  { name: "Выход из пещеры", r: 40, solid: true, caveOut: true },
 };
 
 /* Подсказки — для чего каждая постройка */
@@ -69,7 +91,9 @@ const STRUCT_HINT = {
     house: "Укрытие: враги не атакуют рядом · +HP и рассудок ночью",
     wall: "Блокирует тварей — обнеси лагерь стенами",
     flag: "Метка-маяк, видна на миникарте — не потеряешь базу",
-    beacon: "⭐ ЦЕЛЬ ИГРЫ! Победа — переживи4 дня и собери ресурсы",
+    beacon: "⭐ ЦЕЛЬ ИГРЫ! Победа — выполни все задачи и построй маяк",
+    caveIn: "🕳 ЛКМ — войти в пещеру. Там руда для брони (железо, алмазы)",
+    caveOut: "☀ ЛКМ — выйти на поверхность",
 };
 
 const RECIPES = [
@@ -82,7 +106,19 @@ const RECIPES = [
     { out: "house",    cost: { log: 6, rock: 8, grass: 4 } },
     { out: "wall",     cost: { rock: 4 } },
     { out: "flag",     cost: { twig: 3, grass: 2 } },
-    { out: "beacon",   cost: { gem: 4, log: 12, rock: 12, flint: 6, cookedMeat: 4 }, goal: true },
+    /* БРОНЯ — три уровня. Дерево есть на поверхности,
+       железо и алмазы — ТОЛЬКО в пещере (куда нужна кирка). */
+    { out: "helmet_wood",    cost: { log: 4 } },
+    { out: "chest_wood",     cost: { log: 6 } },
+    { out: "legs_wood",      cost: { log: 5 } },
+    { out: "helmet_iron",    cost: { iron: 3 } },
+    { out: "chest_iron",     cost: { iron: 5 } },
+    { out: "legs_iron",      cost: { iron: 4 } },
+    { out: "helmet_diamond", cost: { diamond: 2, iron: 2 } },
+    { out: "chest_diamond",  cost: { diamond: 3, iron: 3 } },
+    { out: "legs_diamond",   cost: { diamond: 2, iron: 2 } },
+    /* ЦЕЛЬ: маяк требует алмазы (пещера) + кристаллы (боссы) + много ресурсов */
+    { out: "beacon",   cost: { diamond: 3, gem: 4, log: 15, rock: 15, cookedMeat: 6 }, goal: true },
 ];
 
 /* ---------------------------------------------------------------------
@@ -97,6 +133,9 @@ const NODE_TYPES = {
     twigBush:  { name: "Ветвистый куст",hp: 1, tool: null,      drop: "twig",  r: 16, col: "#8a6b3a", dropQty: 3 },
     mushroom:  { name: "Грибница",      hp: 1, tool: null,      drop: "mushroom", r: 13, col: "#c9a227", dropQty: 1 },
     deadTree:  { name: "Сухое дерево",  hp: 2, tool: "axe",     drop: "log",   r: 22, col: "#5c4a32", dropQty: 2 },
+    /* Руды — добываются в ПЕЩЕРЕ киркой (нужны для брони) */
+    ironOre:    { name: "Железная руда", hp: 5, tool: "pickaxe", drop: "iron",    r: 22, col: "#b08050", dropQty: 2 },
+    diamondOre: { name: "Алмазная руда", hp: 7, tool: "pickaxe", drop: "diamond", r: 20, col: "#5ad6e8", dropQty: 1 },
 };
 
 /* ---------------------------------------------------------------------
@@ -111,6 +150,27 @@ const CREATURE_TYPES = {
     golem:   { name: "Каменный голем", hp: 240, spd: 62, r: 42, col: "#6d6d78", dmg: 24, passive: false, aggro: 520, boss: true, loot: { gem: 2, rock: 6 } },
     shade:   { name: "Теневой зверь",  hp: 170, spd: 190, r: 34, col: "#180f2b", dmg: 18, passive: false, aggro: 640, boss: true, night: true, loot: { gem: 1, meat: 3 } },
 };
+
+/* ---------------------------------------------------------------------
+   4b. ЦЕЛИ ИГРЫ — цепочка задач (выполняются по порядку)
+   --------------------------------------------------------------------- */
+const GOALS = [
+    { id: "survive", icon: "🌅", text: "Переживи до Дня 3",
+      hint: g => `День ${g.day}/3`,
+      check: g => g.day >= 3 },
+    { id: "armor",   icon: "🛡️", text: "Создай и надень броню",
+      hint: () => "Скрафти броню (C) и кликни по ней, чтобы надеть",
+      check: g => ["head", "body", "legs"].some(s => g.armor[s]) },
+    { id: "cave",    icon: "💠", text: "Добудь алмаз в пещере",
+      hint: g => (g.flags.diamond ? "Алмаз получен!" : "Найди вход в пещеру (🕳) и добудь алмаз киркой"),
+      check: g => !!g.flags.diamond },
+    { id: "boss",    icon: "👑", text: "Победи мини-босса",
+      hint: g => (g.flags.boss ? "Босс повержен!" : "Боссы появляются ночью со 2 дня"),
+      check: g => !!g.flags.boss },
+    { id: "beacon",  icon: "🗼", text: "Построй Маяк спасения",
+      hint: g => "Собери алмазы, кристаллы и ресурсы — и построй маяк",
+      check: g => !!g.won },
+];
 
 /* ---------------------------------------------------------------------
    5. СОСТОЯНИЕ
@@ -138,8 +198,18 @@ const G = {
     pvx: 0, pvy: 0,   // направление взгляда
     facing: 0,
     dashT: 0, dashCd: 0,
+    stamina: 100,        // стамина для бега (0..100)
+    sprinting: false,    // бежит ли сейчас
+    sprintExhausted: false,  // выдохся: нельзя бежать, пока стамина не восстановится
     inv: {},          // id -> qty
     equipped: null,
+    armor: { head: null, body: null, legs: null },  // надетая броня {id,dur,maxDur}
+    mode: "survival",    // "survival" | "sandbox"
+    dim: "surface",      // текущее измерение: "surface" | "cave"
+    cave: null,          // состояние пещеры (когда игрок НЕ в ней)
+    surfaceSnap: null,   // снимок поверхности (когда игрок В пещере)
+    goalIdx: 0,          // индекс текущей цели
+    flags: { diamond: false, boss: false },  // вехи (алмаз добыт, босс убит)
     nodes: [],        // ресурсы
     creatures: [],    // животные
     structures: [],   // постройки
@@ -203,6 +273,7 @@ function refreshCraftIfOpen() {
 }
 function countItem(id) { return G.inv[id] || 0; }
 function hasCost(cost) {
+    if (G.mode === "sandbox") return true;   // в песочнице крафт бесплатный
     for (const k in cost) if (countItem(k) < cost[k]) return false;
     return true;
 }
@@ -210,14 +281,16 @@ function hasCost(cost) {
 /* ---------------------------------------------------------------------
    8. ГЕНЕРАЦИЯ МИРА
    --------------------------------------------------------------------- */
-function spawnNode(type, x, y) {
+function makeNode(type, x, y) {
     const t = NODE_TYPES[type];
-    G.nodes.push({
+    return {
         id: ++G.lastHitId, type, x, y,
         hp: t.hp, maxHp: t.hp, r: t.r,
-        wobble: rnd(0, Math.PI * 2),
-        shake: 0,
-    });
+        wobble: rnd(0, Math.PI * 2), shake: 0,
+    };
+}
+function spawnNode(type, x, y) {
+    G.nodes.push(makeNode(type, x, y));
 }
 function generateWorld() {
     G.nodes = [];
@@ -246,6 +319,77 @@ function generateWorld() {
         const a = (i / starter.length) * Math.PI * 2;
         spawnNode(t, cx + Math.cos(a) * rnd(130, 220), cy + Math.sin(a) * rnd(130, 220));
     });
+    // ВХОДЫ В ПЕЩЕРЫ: гарантированно один рядом со спавном + несколько по миру
+    G.structures = G.structures.filter(s => s.type !== "caveIn");
+    const caveSpots = [];
+    const fx = cx + 470, fy = cy - 150;            // вход у спавна — его всегда видно
+    G.nodes = G.nodes.filter(n => dist(n.x, n.y, fx, fy) >= 100);   // убираем мешающие узлы
+    caveSpots.push([fx, fy]);
+    let extra = 0;
+    for (let i = 0; i < 60 && extra < 4; i++) {    // ещё несколько, если место свободно
+        const x = rnd(350, CFG.worldW - 350), y = rnd(350, CFG.worldH - 350);
+        if (dist(x, y, fx, fy) < 600) continue;
+        if (G.structures.some(s => dist(s.x, s.y, x, y) < 130)) continue;
+        if (G.nodes.some(n => dist(n.x, n.y, x, y) < 100)) continue;
+        caveSpots.push([x, y]); extra++;
+    }
+    for (const [x, y] of caveSpots)
+        G.structures.push({ type: "caveIn", x, y, born: G.time, hp: 99999, maxHp: 99999 });
+}
+
+/* ---------------------------------------------------------------------
+   8b. ПЕЩЕРЫ — отдельное измерение с рудой для брони
+   --------------------------------------------------------------------- */
+function generateCaveState() {
+    const w = CFG.caveW, h = CFG.caveH;
+    const nodes = [];
+    for (let i = 0; i < 150; i++) nodes.push(makeNode("ironOre",    rnd(120, w - 120), rnd(120, h - 120)));
+    for (let i = 0; i < 55;  i++) nodes.push(makeNode("diamondOre", rnd(120, w - 120), rnd(120, h - 120)));
+    for (let i = 0; i < 90;  i++) nodes.push(makeNode("boulder",    rnd(120, w - 120), rnd(120, h - 120)));
+    for (let i = 0; i < 45;  i++) nodes.push(makeNode("flintRock",  rnd(120, w - 120), rnd(120, h - 120)));
+    const structures = [{ type: "caveOut", x: w / 2, y: h / 2, born: 0, hp: 99999, maxHp: 99999 }];
+    const creatures = [];
+    for (let i = 0; i < 14; i++) {
+        const a = rnd(0, Math.PI * 2), d = rnd(450, 1500);
+        creatures.push(makeCreature(Math.random() < 0.6 ? "spider" : "wolf",
+            clamp(w / 2 + Math.cos(a) * d, 90, w - 90),
+            clamp(h / 2 + Math.sin(a) * d, 90, h - 90)));
+    }
+    return { px: w / 2 + 170, py: h / 2, facing: 0, nodes, creatures, structures, dropped: [] };
+}
+function currentDimState() {
+    return { px: G.px, py: G.py, facing: G.facing, nodes: G.nodes,
+             creatures: G.creatures, structures: G.structures, dropped: G.dropped };
+}
+function applyDimState(d) {
+    G.px = d.px; G.py = d.py; G.facing = d.facing;
+    G.nodes = d.nodes; G.creatures = d.creatures;
+    G.structures = d.structures; G.dropped = d.dropped;
+    G.camX = G.px; G.camY = G.py;
+    G.placing = null;
+}
+function enterCave() {
+    if (G.dim === "cave") return;
+    G.surfaceSnap = currentDimState();            // запоминаем поверхность
+    if (!G.cave) G.cave = generateCaveState();    // генерируем при первом входе
+    applyDimState(G.cave);
+    G.dim = "cave";
+    toast("🕳️ Пещера! Добудь руду киркой — железо и алмазы для брони.", "#8e44ad");
+}
+function exitCave() {
+    if (G.dim !== "cave" || !G.surfaceSnap) return;
+    G.cave = currentDimState();                   // сохраняем пещеру
+    applyDimState(G.surfaceSnap);                 // возвращаем поверхность
+    G.surfaceSnap = null;
+    G.dim = "surface";
+    toast("☀️ Вы вышли на поверхность.", "#f1c40f");
+}
+function tryInteractCave() {
+    for (const s of G.structures) {
+        if (s.type === "caveIn"  && dist(G.px, G.py, s.x, s.y) < 76) { enterCave(); return true; }
+        if (s.type === "caveOut" && dist(G.px, G.py, s.x, s.y) < 76) { exitCave();  return true; }
+    }
+    return false;
 }
 
 function respawnNodes(dt) {
@@ -270,8 +414,11 @@ function respawnNodes(dt) {
    9. СПАВН ЖИВОТНЫХ
    --------------------------------------------------------------------- */
 function spawnCreature(type, x, y) {
+    G.creatures.push(makeCreature(type, x, y));
+}
+function makeCreature(type, x, y) {
     const t = CREATURE_TYPES[type];
-    G.creatures.push({
+    return {
         id: ++G.lastHitId, type, x, y,
         hp: t.hp, maxHp: t.hp, r: t.r,
         vx: 0, vy: 0,
@@ -279,7 +426,7 @@ function spawnCreature(type, x, y) {
         atkCd: 0, hitFlash: 0,
         anim: rnd(0, Math.PI * 2),
         boss: !!t.boss,
-    });
+    };
 }
 function pickSpawnPos(minDist, maxDist) {
     const a = rnd(0, Math.PI * 2);
@@ -374,6 +521,7 @@ function gather() {
     if (n.hp <= 0) {
         const qty = def.dropQty || 1;
         addItem(def.drop, qty);
+        if (def.drop === "diamond") G.flags.diamond = true;   // веха цели: алмаз добыт
         floater(n.x, n.y - n.r, "+" + qty + " " + ITEMS[def.drop].name, "#2ecc71");
         G.nodes = G.nodes.filter(x => x !== n);
         G.sanity = clamp(G.sanity + 2, 0, 100);
@@ -405,7 +553,7 @@ function killCreature(c) {
     for (const k in def.loot) addItem(k, def.loot[k]);
     const lootNames = Object.keys(def.loot).map(k => def.loot[k] + " " + ITEMS[k].name).join(", ");
     floater(c.x, c.y, "+" + lootNames, "#f1c40f");
-    if (def.boss) { toast("🏆 " + def.name + " повержен! Добыча: " + lootNames, "#f1c40f"); G.shake = 10; }
+    if (def.boss) { toast("🏆 " + def.name + " повержен! Добыча: " + lootNames, "#f1c40f"); G.shake = 10; G.flags.boss = true; }
     // кровавые частицы
     for (let i = 0; i < 8; i++) {
         G.particles.push({ x: c.x, y: c.y, vx: rnd(-90, 90), vy: rnd(-90, 90), t: 0, life: 0.5, col: "#a33" });
@@ -415,10 +563,15 @@ function killCreature(c) {
 }
 
 function damagePlayer(amount, reason) {
-    G.hp = clamp(G.hp - amount, 0, G.maxHp);
+    if (G.mode === "sandbox") return;   // в песочнице урона нет
+    // броня снижает урон, но сквозь неё всегда проходит часть (min 15%)
+    const total = armorTotal();
+    const actual = Math.max(0, Math.max(amount - total, amount * CFG.armorMinPass));
+    if (total > 0) damageArmor(amount);   // прочность брони убывает от удара
+    G.hp = clamp(G.hp - actual, 0, G.maxHp);
     G.hurtFlash = 1;
     G.shake = Math.min(12, G.shake + 5);
-    floater(G.px, G.py - 30, "-" + Math.round(amount), "#ff1744");
+    floater(G.px, G.py - 30, "-" + Math.round(actual), "#ff1744");
     if (G.hp <= 0) die(reason);
 }
 
@@ -443,9 +596,43 @@ function useBandage() {
 }
 
 /* ---------------------------------------------------------------------
+   14b. БРОНЯ: надеть / защита / поломка
+   --------------------------------------------------------------------- */
+function equipArmor(id) {
+    const it = ITEMS[id];
+    if (!it || it.cat !== "armor") return;
+    if (!removeItem(id, 1)) return;
+    const prev = G.armor[it.slot];
+    if (prev) addItem(prev.id, 1);          // прежняя броня — обратно в инвентарь
+    G.armor[it.slot] = { id: id, dur: it.dur, maxDur: it.dur };
+    toast("Надето: " + it.icon + " " + it.name, "#3498db");
+    renderInventory();
+}
+function armorTotal() {
+    let t = 0;
+    for (const s of ["head", "body", "legs"]) { const a = G.armor[s]; if (a) t += (ITEMS[a.id].armor || 0); }
+    return t;
+}
+function damageArmor(amount) {
+    const loss = Math.max(2, Math.ceil(amount / 6));   // чем сильнее удар — тем больше износ
+    for (const s of ["head", "body", "legs"]) {
+        const a = G.armor[s];
+        if (!a) continue;
+        a.dur -= loss;
+        if (a.dur <= 0) {
+            toast("💥 " + ITEMS[a.id].name + " сломалась!", "#e74c3c");
+            delete G.armor[s];
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------
    15. КРАФТ
    --------------------------------------------------------------------- */
 function craft(recipe) {
+    if (recipe.goal && G.mode !== "sandbox" && G.goalIdx < GOALS.length - 1) {
+        toast("🔒 Сначала выполни предыдущие задачи", "#e67e22"); return;
+    }
     if (!hasCost(recipe.cost)) { toast("Не хватает ресурсов", "#e74c3c"); return; }
     for (const k in recipe.cost) removeItem(k, recipe.cost[k]);
     addItem(recipe.out, 1);
@@ -570,6 +757,7 @@ function updateSpawns(dt) {
         const wild = G.creatures.filter(c => !CREATURE_TYPES[c.type].boss).length;
         if (wild < 16 + G.day * 2) spawnWildlife();
     }
+    if (G.mode === "sandbox") return;   // в песочнице только мирные животные
 
     // враги ночью (чем дальше — тем больше и чаще)
     if (night) {
@@ -614,7 +802,18 @@ function updatePlayer(dt) {
 
     G.dashCd = Math.max(0, G.dashCd - dt);
     G.dashT = Math.max(0, G.dashT - dt);
-    let speed = G.keys["sprint"] ? CFG.sprintSpeed : CFG.playerSpeed;
+    // БЕГ ограничен стаминой: бежишь ~5 секунд, потом «выдыхаешься» и идёшь шагом,
+    // пока стамина не восстановится (затем бег снова доступен).
+    const wantSprint = G.keys["sprint"] && (mx || my) && G.stamina > 0 && !G.sprintExhausted;
+    G.sprinting = wantSprint;
+    if (wantSprint) {
+        G.stamina = clamp(G.stamina - CFG.sprintDrain * dt, 0, 100);
+        if (G.stamina <= 0) G.sprintExhausted = true;    // выдыхался
+    } else {
+        G.stamina = clamp(G.stamina + CFG.sprintRegen * dt, 0, 100);
+        if (G.stamina >= 100 || !G.keys["sprint"]) G.sprintExhausted = false;
+    }
+    let speed = G.sprinting ? CFG.sprintSpeed : CFG.playerSpeed;
     if (G.dashT > 0) speed *= CFG.dashBoost;
 
     const nx = G.px + mx * speed * dt;
@@ -641,6 +840,13 @@ function updatePlayer(dt) {
    --------------------------------------------------------------------- */
 function updateStats(dt) {
     const night = phaseInfo().night;
+
+    // ПЕСОЧНИЦА: голод/рассудок полные, голода нет, HP медленно тянется
+    if (G.mode === "sandbox") {
+        G.hunger = 100; G.sanity = 100;
+        if (G.hp < G.maxHp) G.hp = clamp(G.hp + 12 * dt, 0, G.maxHp);
+        return;
+    }
 
     G.hunger = clamp(G.hunger - CFG.hungerDecay * dt, 0, 100);
     if (night) G.sanity = clamp(G.sanity - CFG.sanityNightDecay * dt, 0, 100);
@@ -699,6 +905,8 @@ function setupInput() {
         // ПАУЗА: Escape или P (сначала отменяем постройку/крафт)
         if (e.code === "Escape" || e.code === "KeyP") {
             e.preventDefault();
+            // ЛЮБОЕ нажатие Esc сохраняет игру (даже если просто закрываем крафт/стройку)
+            if (G.running && !G.won) { saveGame(); toast("💾 Игра сохранена", "#3498db"); }
             if (G.placing) { cancelPlacing(); return; }
             if (!document.getElementById("craft-panel").classList.contains("hidden")) {
                 toggleCraft();   // сначала закрываем крафт
@@ -749,8 +957,9 @@ function setupInput() {
         if (G.gatherCd > 0) return;
         G.gatherCd = 0.28;
 
-        // приоритет: существо > ресурс > постройка(костёр)
+        // приоритет: существо > пещера(войти/выйти) > ресурс > костёр
         if (attack()) return;
+        if (tryInteractCave()) return;
         if (gather()) return;
 
         // костёр: приготовить мясо
@@ -807,6 +1016,7 @@ function itemClick(id) {
     if (!it || countItem(id) <= 0) return;
     if (it.cat === "food") { consume(id); return; }
     if (id === "bandage") { useBandage(); return; }
+    if (it.cat === "armor") { equipArmor(id); return; }
     if (it.cat === "tool") {
         G.equipped = G.equipped === id ? null : id;
         renderInventory();
@@ -833,6 +1043,8 @@ function canPlace(wx, wy, id) {
     const def = STRUCTURES[id];
     if (!def) return [false, "Неизвестная постройка"];
     if (id === "beacon" && G.day < 4) return [false, "Маяк ставится с 4 дня — переживи ночи и добудь кристаллы"];
+    if (id === "beacon" && G.mode !== "sandbox" && G.goalIdx < GOALS.length - 1)
+        return [false, "Сначала выполни предыдущие задачи (цель сверху)"];
     const r = def.r;
     if (wx < r + 12 || wy < r + 12 || wx > CFG.worldW - r - 12 || wy > CFG.worldH - r - 12)
         return [false, "Слишком близко к краю мира"];
@@ -927,20 +1139,27 @@ function renderInventory() {
 function renderCraft() {
     const list = document.getElementById("craft-list");
     list.innerHTML = "";
+    const sandbox = G.mode === "sandbox";
+    const beaconLocked = G.goalIdx < GOALS.length - 1;   // маяк — только когда предыдущие цели выполнены
     for (const r of RECIPES) {
         const it = ITEMS[r.out];
-        const can = hasCost(r.cost);
+        const goalLocked = !!r.goal && !sandbox && beaconLocked;
+        const can = !goalLocked && hasCost(r.cost);
         const row = document.createElement("div");
-        row.className = "recipe" + (can ? " can" : "") + (r.goal ? " goal" : "");
-        const costHtml = Object.keys(r.cost).map(k => {
-            const have = countItem(k), need = r.cost[k];
-            const ok = have >= need;
-            return `<span class="cost ${ok ? "ok" : "no"}" title="${ITEMS[k].name}">` +
-                   `<span class="cost-ico">${ITEMS[k].icon}</span>` +
-                   `<span class="cost-name">${ITEMS[k].name}</span>` +
-                   `<span class="cost-num">${have}/${need}</span></span>`;
-        }).join("");
-        const goalTag = r.goal ? `<div class="goal-tag">⭐ ЦЕЛЬ — выигрыш</div>` : "";
+        row.className = "recipe" + (can ? " can" : "") + (r.goal ? " goal" : "") + (goalLocked ? " locked" : "");
+        const costHtml = sandbox
+            ? `<span class="cost ok"><span class="cost-name">бесплатно</span></span>`
+            : Object.keys(r.cost).map(k => {
+                const have = countItem(k), need = r.cost[k];
+                const ok = have >= need;
+                return `<span class="cost ${ok ? "ok" : "no"}" title="${ITEMS[k].name}">` +
+                       `<span class="cost-ico">${ITEMS[k].icon}</span>` +
+                       `<span class="cost-name">${ITEMS[k].name}</span>` +
+                       `<span class="cost-num">${have}/${need}</span></span>`;
+            }).join("");
+        const goalTag = r.goal
+            ? `<div class="goal-tag">${goalLocked ? "🔒 Сначала выполни предыдущие задачи" : "⭐ ЦЕЛЬ — выигрыш"}</div>`
+            : "";
         row.innerHTML =
             `<div class="recipe-ico">${it.icon}</div>` +
             `<div class="recipe-info"><div class="recipe-name">${it.name}</div>${goalTag}` +
@@ -993,7 +1212,9 @@ function updateTooltip() {
             for (const s of G.structures) {
                 const sd = STRUCTURES[s.type];
                 if (dist(wx, wy, s.x, s.y) < sd.r + 18) {
-                    title = ITEMS[s.type].icon + " " + sd.name;
+                    const sit = ITEMS[s.type];
+                    const caveIco = s.type === "caveIn" ? "🕳️" : s.type === "caveOut" ? "☀️" : (sit ? sit.icon : "🛠️");
+                    title = caveIco + " " + sd.name;
                     sub = STRUCT_HINT[s.type] || "";
                     if (s.type === "campfire" && countItem("meat") > 0) sub = "ЛКМ — приготовить мясо · " + sub;
                     break;
@@ -1241,6 +1462,23 @@ function drawStructure(s, sx, sy) {
         ctx.beginPath(); ctx.arc(sx, sy - 76, 13, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "#fff";
         ctx.beginPath(); ctx.arc(sx, sy - 76, 5, 0, Math.PI * 2); ctx.fill();
+    } else if (s.type === "caveIn" || s.type === "caveOut") {
+        // вход/выход в пещеру — тёмная дыра с каменной рамкой
+        ctx.fillStyle = "#4a4a55";
+        ctx.beginPath(); ctx.ellipse(sx, sy, 42, 32, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#2a2a33";
+        ctx.beginPath(); ctx.ellipse(sx, sy, 36, 26, 0, 0, Math.PI * 2); ctx.fill();
+        const inner = s.type === "caveIn" ? "#07070c" : "#123";
+        ctx.fillStyle = inner;
+        ctx.beginPath(); ctx.ellipse(sx, sy, 28, 20, 0, 0, Math.PI * 2); ctx.fill();
+        // подсветка-мечка, чтобы заметить
+        ctx.globalAlpha = 0.45 + Math.sin(G.time * 3) * 0.25;
+        ctx.fillStyle = s.type === "caveIn" ? "#b07cff" : "#ffd23f";
+        ctx.font = "18px Segoe UI Emoji, Segoe UI";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(s.type === "caveIn" ? "🕳" : "☀", sx, sy - 40);
+        ctx.globalAlpha = 1;
+        ctx.textBaseline = "alphabetic";
     }
 }
 
@@ -1746,9 +1984,26 @@ function renderHud() {
     document.getElementById("bar-hp").style.width = (G.hp / G.maxHp * 100) + "%";
     document.getElementById("bar-hunger").style.width = G.hunger + "%";
     document.getElementById("bar-sanity").style.width = G.sanity + "%";
+    document.getElementById("bar-stamina").style.width = G.stamina + "%";
     document.getElementById("num-hp").textContent = Math.ceil(G.hp);
     document.getElementById("num-hunger").textContent = Math.ceil(G.hunger);
     document.getElementById("num-sanity").textContent = Math.ceil(G.sanity);
+    document.getElementById("num-stamina").textContent = Math.ceil(G.stamina);
+
+    // БРОНЯ — возле ХП: 3 слота (шлем/нагрудник/поножи) с полоской прочности
+    const armorEl = document.getElementById("hud-armor");
+    const SLOT_EMPTY = { head: "👒", body: "🦺", legs: "👖" };
+    armorEl.innerHTML = ["head", "body", "legs"].map(slot => {
+        const a = G.armor[slot];
+        if (!a) return `<div class="armor-slot empty" title="Слот пуст"><span>${SLOT_EMPTY[slot]}</span></div>`;
+        const it = ITEMS[a.id];
+        const pct = Math.max(0, Math.round(a.dur / a.maxDur * 100));
+        const cls = pct > 60 ? "hi" : pct > 30 ? "mid" : "lo";
+        return `<div class="armor-slot tier-${it.tier}" title="${it.name} — прочность ${a.dur}/${a.maxDur}">
+            <span class="armor-ico">${it.icon}</span>
+            <div class="armor-dur"><div class="armor-dur-fill ${cls}" style="width:${pct}%"></div></div>
+        </div>`;
+    }).join("");
 
     const info = phaseInfo();
     const p = G.dayPhase;
@@ -1775,18 +2030,29 @@ function renderHud() {
         buffEl.classList.add("hidden");
     }
 
-    // цель: построить Маяк спасения
+    // ЦЕЛЬ — цепочка задач (выполняются по порядку)
     const objEl = document.getElementById("hud-objective");
-    const br = RECIPES.find(r => r.out === "beacon");
-    const dayOk = G.day >= 4;
-    const matsOk = hasCost(br.cost);
-    const gems = countItem("gem");
-    const ready = dayOk && matsOk;
-    objEl.className = ready ? "obj-ready" : "";
-    objEl.innerHTML = "🎯 Цель: <b>🗼 Маяк</b> — " +
-        `<span class="${dayOk ? "ok" : "no"}">День ${G.day}/4</span> · ` +
-        `<span class="${gems >= br.cost.gem ? "ok" : "no"}">💎 ${gems}/${br.cost.gem}</span> · ` +
-        `<span class="${matsOk ? "ok" : "no"}">${matsOk ? "материалы есть — строй!" : "нужны ресурсы (C — крафт)"}</span>`;
+    if (G.mode === "sandbox") {
+        objEl.className = "";
+        objEl.innerHTML = "🎨 <b>Песочница</b> — твори свободно: крафт бесплатный, урона нет";
+    } else {
+        const gi = Math.min(G.goalIdx, GOALS.length - 1);
+        const g = GOALS[gi];
+        objEl.className = (gi >= GOALS.length - 1) ? "obj-ready" : "";
+        objEl.innerHTML = `🎯 <b>${g.icon} ${g.text}</b> ` +
+            `<span class="goal-idx">${gi + 1}/${GOALS.length}</span> ` +
+            `<span class="goal-hint">${g.hint(G)}</span>`;
+    }
+}
+
+/* Продвижение по целям: если текущая выполнена — переходим к следующей */
+function updateGoals() {
+    if (G.mode === "sandbox") return;
+    while (G.goalIdx < GOALS.length - 1 && GOALS[G.goalIdx].check(G)) {
+        G.goalIdx++;
+        const g = GOALS[G.goalIdx];
+        toast("✅ Задача выполнена! Новая цель: " + g.icon + " " + g.text, "#2ecc71");
+    }
 }
 
 /* ---------------------------------------------------------------------
@@ -1829,20 +2095,53 @@ function winGame() {
    --------------------------------------------------------------------- */
 const SAVE_KEY = "horror_save_v1";
 
+/* --- сериализация измерения (поверхность / пещера) --- */
+function serializeDim(sd) {
+    if (!sd) return null;
+    return {
+        px: sd.px, py: sd.py, facing: sd.facing || 0,
+        nodes: sd.nodes.map(n => ({ type: n.type, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp })),
+        creatures: sd.creatures.map(c => ({ type: c.type, x: c.x, y: c.y, hp: c.hp, wanderT: c.wanderT, wx: c.wx, wy: c.wy, anim: c.anim })),
+        structures: sd.structures.map(s => ({ type: s.type, x: s.x, y: s.y, hp: s.hp, maxHp: s.maxHp })),
+        dropped: sd.dropped.map(d => ({ id: d.id, qty: d.qty, x: d.x, y: d.y })),
+    };
+}
+function deserializeDim(sd) {
+    if (!sd) return null;
+    return {
+        px: sd.px, py: sd.py, facing: sd.facing || 0,
+        nodes: (sd.nodes || []).map(n => {
+            const t = NODE_TYPES[n.type]; if (!t) return null;
+            return { id: ++G.lastHitId, type: n.type, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp, r: t.r, wobble: rnd(0, Math.PI * 2), shake: 0 };
+        }).filter(Boolean),
+        creatures: (sd.creatures || []).map(c => {
+            const t = CREATURE_TYPES[c.type]; if (!t) return null;
+            return { id: ++G.lastHitId, type: c.type, x: c.x, y: c.y, hp: c.hp, maxHp: t.hp, r: t.r, vx: 0, vy: 0, wanderT: c.wanderT || rnd(0, 2), wx: c.wx || c.x, wy: c.wy || c.y, atkCd: 0, hitFlash: 0, anim: c.anim || 0, boss: !!t.boss };
+        }).filter(Boolean),
+        structures: (sd.structures || []).map(s => (STRUCTURES[s.type] ? { type: s.type, x: s.x, y: s.y, born: 0, hp: s.hp, maxHp: s.maxHp } : null)).filter(Boolean),
+        dropped: (sd.dropped || []).map(x => ({ id: x.id, qty: x.qty, x: x.x, y: x.y, t: 0, delay: 0.7 })),
+    };
+}
+
 function saveGame() {
     if (!G.running || G.won) return;
     try {
+        // нормализуем: surface и cave — в зависимости от текущего измерения
+        let surf, cave;
+        if (G.dim === "surface") { surf = currentDimState(); cave = G.cave; }
+        else { surf = G.surfaceSnap; cave = currentDimState(); }
         const data = {
-            v: 1,
+            v: 2,
             day: G.day, dayPhase: G.dayPhase, time: G.time,
             hp: G.hp, maxHp: G.maxHp, hunger: G.hunger, sanity: G.sanity,
-            px: G.px, py: G.py, facing: G.facing,
+            stamina: G.stamina,
             inv: G.inv, equipped: G.equipped,
-            nodes: G.nodes.map(n => ({ type: n.type, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp })),
-            creatures: G.creatures.map(c => ({ type: c.type, x: c.x, y: c.y, hp: c.hp, wanderT: c.wanderT, wx: c.wx, wy: c.wy, anim: c.anim })),
-            structures: G.structures.map(s => ({ type: s.type, x: s.x, y: s.y, hp: s.hp, maxHp: s.maxHp })),
-            dropped: G.dropped.map(d => ({ id: d.id, qty: d.qty, x: d.x, y: d.y })),
+            armor: G.armor,
+            mode: G.mode, goalIdx: G.goalIdx, flags: G.flags,
+            dim: G.dim,
             spawnTimer: G.spawnTimer, bossTimer: G.bossTimer, lastHitId: G.lastHitId,
+            surface: serializeDim(surf),
+            cave: serializeDim(cave),
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     } catch (e) { /* localStorage может быть недоступен */ }
@@ -1852,7 +2151,7 @@ function loadGame() {
         const raw = localStorage.getItem(SAVE_KEY);
         if (!raw) return false;
         const d = JSON.parse(raw);
-        if (!d || d.v !== 1) return false;
+        if (!d || (d.v !== 1 && d.v !== 2)) return false;
 
         G.running = true; G.paused = false; G.won = false;
         G.keys = {};
@@ -1862,23 +2161,39 @@ function loadGame() {
 
         G.day = d.day; G.dayPhase = d.dayPhase; G.time = d.time;
         G.hp = d.hp; G.maxHp = d.maxHp; G.hunger = d.hunger; G.sanity = d.sanity;
-        G.px = d.px; G.py = d.py; G.facing = d.facing || 0;
-        G.camX = G.px; G.camY = G.py;
+        G.stamina = (d.stamina != null) ? d.stamina : 100;
+        G.sprintExhausted = false;
         G.inv = d.inv || {}; G.equipped = d.equipped || null;
+        G.armor = { head: null, body: null, legs: null, ...(d.armor || {}) };
+        G.mode = (d.mode === "sandbox") ? "sandbox" : "survival";
+        G.goalIdx = d.goalIdx || 0;
+        G.flags = { diamond: false, boss: false, ...(d.flags || {}) };
         G.lastHitId = d.lastHitId || 0;
 
-        G.nodes = (d.nodes || []).map(n => {
-            const t = NODE_TYPES[n.type];
-            if (!t) return null;
-            return { id: ++G.lastHitId, type: n.type, x: n.x, y: n.y, hp: n.hp, maxHp: n.maxHp, r: t.r, wobble: rnd(0, Math.PI * 2), shake: 0 };
-        }).filter(Boolean);
-        G.creatures = (d.creatures || []).map(c => {
-            const t = CREATURE_TYPES[c.type];
-            if (!t) return null;
-            return { id: ++G.lastHitId, type: c.type, x: c.x, y: c.y, hp: c.hp, maxHp: t.hp, r: t.r, vx: 0, vy: 0, wanderT: c.wanderT || rnd(0,2), wx: c.wx || c.x, wy: c.wy || c.y, atkCd: 0, hitFlash: 0, anim: c.anim || 0, boss: !!t.boss };
-        }).filter(Boolean);
-        G.structures = (d.structures || []).map(s => (STRUCTURES[s.type] ? { type: s.type, x: s.x, y: s.y, born: G.time, hp: s.hp, maxHp: s.maxHp } : null)).filter(Boolean);
-        G.dropped = (d.dropped || []).map(x => ({ id: x.id, qty: x.qty, x: x.x, y: x.y, t: 0, delay: 0.7 }));
+        // данные измерений (v1 — плоские поля = поверхность, v2 — surface/cave)
+        let surfSD, caveSD, dim;
+        if (d.v === 1) {
+            surfSD = { px: d.px, py: d.py, facing: d.facing, nodes: d.nodes, creatures: d.creatures, structures: d.structures, dropped: d.dropped };
+            caveSD = null; dim = "surface";
+        } else {
+            surfSD = d.surface; caveSD = d.cave; dim = (d.dim === "cave") ? "cave" : "surface";
+        }
+        const surf = deserializeDim(surfSD);
+        const cave = deserializeDim(caveSD);
+
+        if (dim === "cave" && surf && cave) {
+            G.dim = "cave";
+            G.surfaceSnap = surf;
+            applyDimState(cave);
+            G.cave = cave;
+        } else {
+            G.dim = "surface";
+            G.surfaceSnap = null;
+            G.cave = cave;
+            if (surf) applyDimState(surf);
+        }
+        G.camX = G.px; G.camY = G.py;
+
         G.particles = []; G.floaters = [];
         G.spawnTimer = d.spawnTimer || 1; G.bossTimer = d.bossTimer || 0;
         G.dashT = 0; G.dashCd = 0; G.gatherCd = 0; G.placing = null;
@@ -1916,6 +2231,7 @@ function loop(now) {
     updateSpawns(dt);
     respawnNodes(dt);
     updateDropped(dt);
+    updateGoals();
 
     // автосохранение каждые 20 секунд
     G.saveTimer -= dt;
@@ -1948,7 +2264,8 @@ function loop(now) {
 /* ---------------------------------------------------------------------
    27. СТАРТ ИГРЫ
    --------------------------------------------------------------------- */
-function startGame() {
+function startGame(mode) {
+    mode = (mode === "sandbox") ? "sandbox" : "survival";
     G.running = true;
     G.paused = false;
     G.won = false;
@@ -1959,9 +2276,17 @@ function startGame() {
     document.getElementById("win-screen").classList.add("hidden");
     G.time = 0; G.day = 1; G.dayPhase = 0.05;
     G.hp = G.maxHp = 100; G.hunger = 100; G.sanity = 100;
+    G.stamina = 100; G.sprinting = false; G.sprintExhausted = false;
     G.px = CFG.worldW / 2; G.py = CFG.worldH / 2;
     G.camX = G.px; G.camY = G.py;
     G.inv = {}; G.equipped = null;
+    G.armor = { head: null, body: null, legs: null };
+    G.mode = mode;
+    G.dim = "surface";
+    G.cave = null;
+    G.surfaceSnap = null;
+    G.goalIdx = 0;
+    G.flags = { diamond: false, boss: false };
     G.creatures = []; G.structures = []; G.particles = []; G.floaters = [];
     G.dropped = []; G.placing = null;
     G.spawnTimer = 1; G.bossTimer = 0;
@@ -1972,30 +2297,42 @@ function startGame() {
         const a = rnd(0, Math.PI * 2);
         spawnCreature("rabbit", G.px + Math.cos(a) * rnd(250, 400), G.py + Math.sin(a) * rnd(250, 400));
     }
-    // стартовый набор
-    addItem("twig", 3); addItem("flint", 1);
+    if (mode === "sandbox") {
+        // ПЕСОЧНИЦА: всё есть сразу — инструменты, постройки, броня и стопка ресурсов
+        ["axe", "pickaxe", "spear", "torch", "bandage"].forEach(id => addItem(id, 1));
+        ["campfire", "house", "wall", "flag", "beacon"].forEach(id => addItem(id, 20));
+        ["helmet_wood", "chest_wood", "legs_wood",
+         "helmet_iron", "chest_iron", "legs_iron",
+         "helmet_diamond", "chest_diamond", "legs_diamond"].forEach(id => addItem(id, 1));
+        ["log", "rock", "twig", "grass", "flint", "berry", "mushroom",
+         "meat", "cookedMeat", "iron", "diamond", "gem"].forEach(id => addItem(id, 99));
+        toast("🎨 Песочница: крафт бесплатный, урона нет. Экспериментируй!", "#9b59b6");
+    } else {
+        // стартовый набор
+        addItem("twig", 3); addItem("flint", 1);
+        toast("Добро пожаловать! Соберите ресурсы и переживите первую ночь.", "#f1c40f");
+    }
     renderInventory();
     renderCraft();
-    toast("Добро пожаловать! Соберите ресурсы и переживите первую ночь.", "#f1c40f");
 }
 
-document.getElementById("btn-start").addEventListener("click", () => {
+function startFromMenu() {
     document.getElementById("start-screen").classList.add("hidden");
     document.getElementById("btn-craft-toggle").classList.remove("hidden");
-    startGame();
-});
+}
+document.getElementById("btn-survival").addEventListener("click", () => { startFromMenu(); startGame("survival"); });
+document.getElementById("btn-sandbox").addEventListener("click", () => { startFromMenu(); startGame("sandbox"); });
 document.getElementById("btn-continue").addEventListener("click", () => {
-    document.getElementById("start-screen").classList.add("hidden");
-    document.getElementById("btn-craft-toggle").classList.remove("hidden");
-    if (!loadGame()) startGame();   // если сохранение битое — новая игра
+    startFromMenu();
+    if (!loadGame()) startGame("survival");   // если сохранение битое — новая игра
 });
 document.getElementById("btn-restart").addEventListener("click", () => {
     document.getElementById("death-screen").classList.add("hidden");
-    startGame();
+    startGame("survival");
 });
 document.getElementById("btn-win-restart").addEventListener("click", () => {
     document.getElementById("win-screen").classList.add("hidden");
-    startGame();
+    startGame("survival");
 });
 document.getElementById("btn-resume").addEventListener("click", togglePause);
 document.getElementById("craft-close").addEventListener("click", toggleCraft);
@@ -2011,4 +2348,7 @@ if (hasSave()) document.getElementById("btn-continue").classList.remove("hidden"
 window.addEventListener("beforeunload", () => { if (G.running && !G.won) saveGame(); });
 
 /* Отладочный хук */
-window.GameDebug = { G, CFG, ITEMS, RECIPES, STRUCTURES, startGame, spawnBoss, spawnCreature, addItem, NODE_TYPES, CREATURE_TYPES, itemClick, dropItem, tryPlace, canPlace, cancelPlacing, saveGame, loadGame, hasSave, clearSave, winGame, difficulty };
+window.GameDebug = { G, CFG, ITEMS, RECIPES, STRUCTURES, NODE_TYPES, CREATURE_TYPES, GOALS,
+    startGame, spawnBoss, spawnCreature, addItem, itemClick, dropItem, tryPlace, canPlace, cancelPlacing,
+    saveGame, loadGame, hasSave, clearSave, winGame, difficulty,
+    equipArmor, armorTotal, damageArmor, damagePlayer, enterCave, exitCave, updateGoals, makeNode, hasCost };

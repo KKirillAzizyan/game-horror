@@ -43,10 +43,40 @@ html, body {
 .fill-hp     { background: linear-gradient(90deg, #c0392b, #e74c3c); }
 .fill-hunger { background: linear-gradient(90deg, #d35400, #f39c12); }
 .fill-sanity { background: linear-gradient(90deg, #2980b9, #3498db); }
+.fill-stamina{ background: linear-gradient(90deg, #16a085, #2ecc71); }
 .stat-num {
     font-size: 13px; font-weight: bold; min-width: 30px;
     text-align: right; color: #ddd;
 }
+
+/* ===== БРОНЯ (возле ХП) ===== */
+#hud-armor {
+    position: fixed; top: 176px; left: 14px;
+    display: flex; gap: 6px;
+    z-index: 10;
+}
+.armor-slot {
+    width: 44px; height: 44px;
+    background: rgba(10,10,14,0.78);
+    border: 2px solid #444;
+    border-radius: 8px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    backdrop-filter: blur(4px);
+}
+.armor-slot.empty { opacity: 0.4; border-style: dashed; }
+.armor-slot.tier-wood    { border-color: #a9713b; box-shadow: 0 0 6px rgba(169,113,59,0.45); }
+.armor-slot.tier-iron    { border-color: #b8b8c0; box-shadow: 0 0 6px rgba(184,184,192,0.45); }
+.armor-slot.tier-diamond { border-color: #4dd0e1; box-shadow: 0 0 6px rgba(77,208,225,0.55); }
+.armor-dur {
+    position: absolute; bottom: 2px; left: 3px; right: 3px;
+    height: 4px; background: #1a1a20; border-radius: 2px; overflow: hidden;
+}
+.armor-dur-fill { height: 100%; transition: width 0.2s; }
+.armor-dur-fill.hi  { background: #2ecc71; }
+.armor-dur-fill.mid { background: #f1c40f; }
+.armor-dur-fill.lo  { background: #e74c3c; }
 
 /* ===== ЧАСЫ ===== */
 #hud-clock {
@@ -78,11 +108,19 @@ html, body {
 }
 #hud-objective .ok { color: #2ecc71; font-weight: bold; }
 #hud-objective .no { color: #e74c3c; }
+#hud-objective .goal-idx {
+    color: #f1c40f; font-weight: bold; font-size: 11px;
+    background: rgba(241,196,15,0.15); border: 1px solid rgba(241,196,15,0.5);
+    border-radius: 4px; padding: 1px 5px; margin: 0 4px;
+}
+#hud-objective .goal-hint { color: #9ad; font-size: 12px; }
 #hud-objective.obj-ready {
     border-color: #2ecc71;
     box-shadow: 0 0 12px rgba(46,204,113,0.4);
     color: #eafaf1;
 }
+.recipe.locked { opacity: 0.6; border-color: #7d5a2a; }
+.recipe.locked .recipe-btn { background: #444; color: #888; }
 #hud-buff {
     position: fixed; top: 158px; left: 50%;
     transform: translateX(-50%);
@@ -262,16 +300,31 @@ html, body {
 }
 #btn-win-restart:hover { transform: translateY(-2px); }
 #btn-win-restart:active { transform: translateY(3px); box-shadow: none; }
-#btn-continue {
-    background: #3498db; border: none; border-radius: 10px;
-    padding: 16px 50px; font-size: 21px; font-weight: bold;
-    color: #04121f; cursor: pointer; letter-spacing: 2px;
-    box-shadow: 0 5px 0 #1f618d; transition: transform 0.1s;
-    margin-bottom: 16px;
-}
-#btn-continue:hover { transform: translateY(-2px); }
-#btn-continue:active { transform: translateY(3px); box-shadow: none; }
 .tagline { color: #bbb; font-size: 17px; margin-bottom: 30px; letter-spacing: 1px; }
+
+/* ===== МЕНЮ (стиль Minecraft: широкие кнопки стопкой) ===== */
+.menu-buttons {
+    display: flex; flex-direction: column; gap: 12px;
+    width: 360px; max-width: 90vw;
+    margin-bottom: 34px;
+}
+.menu-btn {
+    background: linear-gradient(#7a7a7a, #5f5f5f);
+    border: 2px solid #000;
+    border-top-color: #a8a8a8; border-left-color: #a8a8a8;
+    border-radius: 0;
+    padding: 15px 20px;
+    font-size: 19px; font-weight: bold;
+    color: #eee; cursor: pointer;
+    letter-spacing: 2px;
+    text-shadow: 2px 2px 0 #000;
+    transition: filter 0.1s, transform 0.05s;
+}
+.menu-btn:hover { filter: brightness(1.22); color: #fff; }
+.menu-btn:active { transform: translateY(2px); }
+.menu-survival { background: linear-gradient(#9a6133, #74431f); }
+.menu-sandbox  { background: linear-gradient(#3f8a5b, #2c6440); }
+#btn-continue  { background: linear-gradient(#3a76b5, #2a5a90); border-top-color: #6ba3dd; border-left-color: #6ba3dd; }
 .controls {
     display: grid; grid-template-columns: 1fr 1fr;
     gap: 10px 30px; margin-bottom: 36px;
@@ -282,19 +335,18 @@ html, body {
     padding: 2px 8px; border-radius: 4px;
     border: 1px solid #444; font-size: 13px;
 }
-#btn-start, #btn-restart {
-    background: #e6b93c; border: none;
+#btn-restart {
+    background: #e74c3c; border: none;
     border-radius: 10px;
     padding: 16px 50px;
     font-size: 21px; font-weight: bold;
-    color: #111; cursor: pointer;
+    color: #fff; cursor: pointer;
     letter-spacing: 2px;
-    box-shadow: 0 5px 0 #96771e;
+    box-shadow: 0 5px 0 #922b21;
     transition: transform 0.1s;
 }
-#btn-restart { background: #e74c3c; color: #fff; box-shadow: 0 5px 0 #922b21; }
-#btn-start:hover, #btn-restart:hover { transform: translateY(-2px); }
-#btn-start:active, #btn-restart:active { transform: translateY(3px); box-shadow: none; }
+#btn-restart:hover { transform: translateY(-2px); }
+#btn-restart:active { transform: translateY(3px); box-shadow: none; }
 #death-reason { font-size: 18px; color: #ccc; margin-bottom: 8px; }
 #death-stats { font-size: 15px; color: #888; margin-bottom: 30px; }
 

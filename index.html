@@ -26,7 +26,15 @@
             <div class="stat-bar"><div id="bar-sanity" class="fill fill-sanity"></div></div>
             <span id="num-sanity" class="stat-num">100</span>
         </div>
+        <div class="stat">
+            <span class="stat-ico">⚡</span>
+            <div class="stat-bar"><div id="bar-stamina" class="fill fill-stamina"></div></div>
+            <span id="num-stamina" class="stat-num">100</span>
+        </div>
     </div>
+
+    <!-- Броня — возле ХП: шлем / нагрудник / поножи + прочность -->
+    <div id="hud-armor"></div>
 
     <!-- Верх: время суток -->
     <div id="hud-clock">
@@ -59,18 +67,22 @@
         <div id="craft-list"></div>
     </div>
 
-    <!-- Стартовый экран -->
+    <!-- Стартовый экран: меню в стиле Minecraft (два режима) -->
     <div id="start-screen">
         <h1>ГОЛОДНЫЕ ПУСТОШИ</h1>
         <p class="tagline">Выживи. Добывай. Создавай. Переживи ночь.</p>
-        <div class="controls">
-            <div><b>W A S D</b> — движение · <b>Мышь</b> — прицел · <b>ЛКМ</b> — удар / сбор</div>
-            <div><b>E</b> — инвентарь · <b>C</b> — крафт · <b>Пробел</b> — рывок</div>
-            <div>Постройки: создай в крафте, кликни в инвентаре, <b>ЛКМ</b> — поставить</div>
-            <div><b>ПКМ по предмету</b> — выбросить · <b>Esc / P</b> — пауза</div>
+        <div class="menu-buttons">
+            <button id="btn-continue" class="hidden menu-btn">▶ ПРОДОЛЖИТЬ СОХРАНЁННОЕ</button>
+            <button id="btn-survival" class="menu-btn menu-survival">⚔️ ВЫЖИВАНИЕ</button>
+            <button id="btn-sandbox" class="menu-btn menu-sandbox">🎨 ПЕСОЧНИЦА</button>
         </div>
-        <button id="btn-continue" class="hidden">ПРОДОЛЖИТЬ СОХРАНЁННОЕ</button>
-        <button id="btn-start">НАЧАТЬ ВЫЖИВАНИЕ</button>
+        <div class="controls">
+            <div><b>W A S D</b> — движение · <b>Shift</b> — бег (стамина) · <b>Пробел</b> — рывок</div>
+            <div><b>ЛКМ</b> — удар / сбор · <b>E</b> — инвентарь · <b>C</b> — крафт</div>
+            <div><b>Броня</b>: скрафти шлем/нагрудник/поножи и кликни по ней, чтобы надеть</div>
+            <div><b>Пещеры 🕳</b>: ищи вход, добывай железо и алмазы (нужна кирка)</div>
+            <div><b>ПКМ по предмету</b> — выбросить · <b>Esc / P</b> — пауза и сохранение</div>
+        </div>
     </div>
 
     <!-- Экран победы -->

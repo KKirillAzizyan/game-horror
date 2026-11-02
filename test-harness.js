@@ -294,6 +294,7 @@ G.nodes = G.nodes.filter(n => dist(n.x, n.y, G.px, G.py) > 160);
 G.creatures = G.creatures.filter(c => dist(c.x, c.y, G.px, G.py) > 160);
 G.structures = G.structures.filter(s => dist(s.x, s.y, G.px, G.py) > 160);
 G.day = 1;
+G.goalIdx = GameDebug.GOALS.length - 1;   // предыдущие задачи выполнены — изолируем проверку по дню
 const [okEarly, whyEarly] = GameDebug.canPlace(G.px, G.py, "beacon");
 check("до 4 дня маяк ставить нельзя", okEarly === false && G.day < 4, whyEarly);
 G.day = 4;
@@ -303,6 +304,128 @@ elements["win-screen"].__classes.add("hidden");          // экран изна�
 elements["game"].__fire("mousedown", { button: 0 });
 check("маяк поставлен → победа", G.won === true && G.running === false, "won=" + G.won);
 check("экран победы открыт", elements["win-screen"].__classes.has("hidden") === false);
+
+console.log("\n=== 16. Стамина: бег не бесконечный ===");
+GameDebug.startGame("survival");
+G.stamina = 100; G.sprintExhausted = false;
+fireWindow("keydown", { code: "KeyW", key: "ц" });
+fireWindow("keydown", { code: "ShiftLeft", key: "Shift" });
+step(60, 16);                                   // ~0.96 с бега
+check("во время бега sprinting=true", G.sprinting === true);
+check("бег тратит стамину", G.stamina < 100 && G.stamina > 60, "stamina=" + G.stamina.toFixed(1));
+G.stamina = 2;
+step(30, 16);                                   // быстро выдыхается
+check("после исчерпания бег прекращается", G.sprinting === false && G.sprintExhausted === true,
+      "st=" + G.stamina.toFixed(1) + " exhausted=" + G.sprintExhausted);
+fireWindow("keyup", { code: "ShiftLeft", key: "Shift" });
+fireWindow("keyup", { code: "KeyW", key: "ц" });
+step(300, 16);                                  // ~4.8 с отдыха (> 4 с на полное восстановление)
+check("стамина полностью восстанавливается", G.stamina === 100, "stamina=" + G.stamina.toFixed(1));
+fireWindow("keydown", { code: "KeyW", key: "ц" });
+fireWindow("keydown", { code: "ShiftLeft", key: "Shift" });
+step(30, 16);
+check("после отдыха можно снова бежать", G.sprinting === true && G.stamina < 100,
+      "st=" + G.stamina.toFixed(1));
+fireWindow("keyup", { code: "ShiftLeft", key: "Shift" });
+fireWindow("keyup", { code: "KeyW", key: "ц" });
+
+console.log("\n=== 17. Броня: надевание, защита, прочность, HUD ===");
+GameDebug.startGame("survival");
+GameDebug.addItem("chest_iron", 1);
+GameDebug.itemClick("chest_iron");               // надеть
+check("нагрудник надет", !!G.armor.body && G.armor.body.id === "chest_iron");
+check("защита посчитана (железо = 8)", GameDebug.armorTotal() === 8, "total=" + GameDebug.armorTotal());
+check("предмет списан из инвентаря", (G.inv["chest_iron"] || 0) === 0);
+step(2, 16);                                     // renderHud отработал
+check("броня видна в HUD (возле ХП)", String(getEl("hud-armor").innerHTML).includes("tier-iron"));
+G.hp = 100;
+GameDebug.damagePlayer(20, "тест");
+check("броня снизила урон (20 → 12)", Math.abs(G.hp - 88) < 0.01, "hp=" + G.hp.toFixed(1));
+check("прочность уменьшилась от удара", G.armor.body.dur === 136, "dur=" + G.armor.body.dur);
+G.armor.body.dur = 1;                            // почти сломана
+GameDebug.damagePlayer(20, "тест");
+check("изношенная броня ломается и снимается", !G.armor.body);
+check("без брони урон проходит полностью", G.hp === 76, "hp=" + G.hp.toFixed(1));
+
+console.log("\n=== 18. Песочница: нет урона, голод не падает, крафт бесплатный ===");
+GameDebug.startGame("sandbox");
+check("режим песочницы установлен", G.mode === "sandbox");
+check("стартовый набор выдан", (G.inv["pickaxe"] || 0) > 0 && (G.inv["diamond"] || 0) > 0);
+G.hp = 100;
+GameDebug.damagePlayer(50, "тест");
+check("в песочнице урона нет", G.hp === 100, "hp=" + G.hp);
+G.hunger = 50;
+step(120, 16);                                   // ~2 с
+check("голод не падает в песочнице", G.hunger === 100, "hunger=" + G.hunger);
+check("крафт бесплатный в песочнице", GameDebug.hasCost({ log: 999, diamond: 999 }) === true);
+
+console.log("\n=== 19. Пещеры: вход, руда, выход, возврат на поверхность ===");
+GameDebug.startGame("survival");
+const caveIn = G.structures.find(s => s.type === "caveIn");
+check("вход в пещеру гарантированно есть", !!caveIn);
+G.px = caveIn.x; G.py = caveIn.y; G.camX = G.px; G.camY = G.py;
+G.creatures = G.creatures.filter(c => dist(c.x, c.y, G.px, G.py) > 150);
+const surfaceNodes = G.nodes.length;
+G.gatherCd = 0;
+elements["game"].__fire("mousedown", { button: 0 });
+check("игрок вошёл в пещеру", G.dim === "cave");
+check("в пещере есть руда (железо + алмазы)",
+      G.nodes.some(n => n.type === "ironOre") && G.nodes.some(n => n.type === "diamondOre"),
+      "nodes=" + G.nodes.length);
+check("поверхность сохранена отдельно", surfaceNodes > 1000, "surface=" + surfaceNodes);
+const caveOut = G.structures.find(s => s.type === "caveOut");
+check("выход из пещеры есть", !!caveOut);
+G.px = caveOut.x; G.py = caveOut.y;
+G.creatures = G.creatures.filter(c => dist(c.x, c.y, G.px, G.py) > 150);
+G.gatherCd = 0;
+elements["game"].__fire("mousedown", { button: 0 });
+check("игрок вышел на поверхность", G.dim === "surface");
+check("позиция на поверхности восстановлена", Math.abs(G.px - caveIn.x) < 1 && Math.abs(G.py - caveIn.y) < 1);
+check("постройки поверхности восстановлены", G.structures.some(s => s.type === "caveIn"));
+
+console.log("\n=== 20. Цепочка целей (пошаговая) ===");
+GameDebug.startGame("survival");
+check("старт с первой цели", G.goalIdx === 0, "goalIdx=" + G.goalIdx);
+G.day = 3; GameDebug.updateGoals();
+check("1) «дожить до 3 дня» → следующая", G.goalIdx === 1, "goalIdx=" + G.goalIdx);
+GameDebug.addItem("helmet_wood", 1);
+GameDebug.itemClick("helmet_wood");               // надеть шлем
+GameDebug.updateGoals();
+check("2) «надеть броню» → следующая", G.goalIdx === 2, "goalIdx=" + G.goalIdx);
+G.flags.diamond = true; GameDebug.updateGoals();
+check("3) «алмаз из пещеры» → следующая", G.goalIdx === 3, "goalIdx=" + G.goalIdx);
+G.flags.boss = true; GameDebug.updateGoals();
+check("4) «победить босса» → финальная", G.goalIdx === 4, "goalIdx=" + G.goalIdx);
+check("остановились на финале (маяк)", G.goalIdx === GameDebug.GOALS.length - 1);
+
+console.log("\n=== 21. Сохранение по Esc (всегда, даже с открытым крафтом) ===");
+GameDebug.startGame("survival");
+GameDebug.clearSave();
+G.day = 5;
+check("до Esc сохранения нет", GameDebug.hasSave() === false);
+fireWindow("keydown", { code: "Escape", key: "Escape" });
+check("Esc сохранил игру", GameDebug.hasSave() === true);
+check("Esc поставил паузу", G.paused === true);
+const rawSave = JSON.parse(localStorage.getItem("horror_save_v1"));
+check("новый формат сохранения (v2 + поля)", rawSave.v === 2 && !!rawSave.mode && !!rawSave.armor &&
+      rawSave.stamina != null && rawSave.goalIdx != null, "v=" + rawSave.v);
+check("сохранено измерение (поверхность)", !!rawSave.surface && rawSave.dim === "surface");
+fireWindow("keydown", { code: "Escape", key: "Escape" });   // снять паузу
+check("повторный Esc снял паузу", G.paused === false);
+GameDebug.clearSave();
+fireWindow("keydown", { code: "KeyC", key: "с" });          // открыть крафт
+check("крафт-панель открыта", getEl("craft-panel").__classes.has("hidden") === false);
+fireWindow("keydown", { code: "Escape", key: "Escape" });   // Esc при открытом крафте
+check("Esc при открытом крафте сохранил игру", GameDebug.hasSave() === true);
+check("крафт закрыт (не пауза)", getEl("craft-panel").__classes.has("hidden") === true && G.paused === false);
+
+console.log("\n=== 22. Меню в стиле Minecraft: два режима ===");
+getEl("start-screen").__classes.delete("hidden");
+getEl("btn-survival").click();
+check("кнопка «ВЫЖИВАНИЕ» → режим выживания", G.running === true && G.mode === "survival");
+check("стартовый экран скрыт", getEl("start-screen").__classes.has("hidden") === true);
+getEl("btn-sandbox").click();
+check("кнопка «ПЕСОЧНИЦА» → режим песочницы", G.running === true && G.mode === "sandbox");
 
 console.log("\n=== ИТОГ ===");
 console.log("PASS: " + pass + "   FAIL: " + fail);
